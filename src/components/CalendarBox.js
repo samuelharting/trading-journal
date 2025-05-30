@@ -2,9 +2,9 @@ import React from "react";
 import { motion } from "framer-motion";
 
 const colorMap = {
-  green: "bg-green-800 hover:bg-green-700",
-  red: "bg-red-900 hover:bg-red-700",
-  gray: "bg-neutral-900 hover:bg-neutral-800",
+  green: "bg-green-900 hover:bg-green-800 border-green-700 border-2",
+  red: "bg-red-950 hover:bg-red-800 border-red-700 border-2",
+  gray: "bg-neutral-900 hover:bg-neutral-800 border-neutral-700 border-2",
 };
 
 const CalendarBox = ({ label, onClick, color = "gray", pnl, status, delay = 0 }) => (
@@ -18,14 +18,10 @@ const CalendarBox = ({ label, onClick, color = "gray", pnl, status, delay = 0 })
     onClick={onClick}
   >
     <div>{label}</div>
-    <div className="mt-2 text-base font-mono">
-      {status === "no-trades" ? (
-        <span className="text-neutral-500 text-xs">No Trades</span>
-      ) : (
-        <span className={color === "green" ? "text-green-200" : color === "red" ? "text-red-200" : "text-[#e5e5e5]"}>
-          {pnl > 0 ? "+" : ""}{pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-        </span>
-      )}
+    <div className="mt-3 text-2xl font-mono font-extrabold select-none">
+      <span className={color === "green" ? "text-green-300" : color === "red" ? "text-red-300" : "text-[#e5e5e5]"}>
+        {pnl > 0 ? "+" : pnl < 0 ? "" : ""}{pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+      </span>
     </div>
   </motion.button>
 );

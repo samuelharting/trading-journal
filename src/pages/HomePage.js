@@ -80,25 +80,15 @@ const HomePage = () => {
                 else { color = "gray"; status = "trades"; }
               }
               return (
-                <motion.div
+                <CalendarBox
                   key={month}
-                  whileHover={{ scale: 1.06, boxShadow: "0 0 0 4px #38bdf8" }}
-                  transition={{ type: "spring", stiffness: 300 }}
-                  className="flex flex-col items-center justify-center h-48 w-full bg-white/10 backdrop-blur-md rounded-2xl shadow-2xl cursor-pointer select-none"
+                  label={<span className="text-2xl font-bold flex items-center justify-center h-full w-full">{month}</span>}
+                  color={color}
+                  pnl={pnl}
+                  status={status}
                   onClick={() => navigate(`/month/${year}/${idx + 1}`)}
-                >
-                  <span className="text-2xl font-bold mb-2">{month}</span>
-                  <span className="text-lg text-neutral-500 mb-2">{idx + 1}</span>
-                  <span className={
-                    color === "green"
-                      ? "text-green-400 text-xl font-bold"
-                      : color === "red"
-                      ? "text-red-400 text-xl font-bold"
-                      : "text-neutral-400 text-xl font-bold"
-                  }>
-                    {pnl > 0 ? "+" : ""}{pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </span>
-                </motion.div>
+                  delay={idx * 0.03}
+                />
               );
             })}
           </motion.div>

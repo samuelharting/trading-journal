@@ -38,7 +38,7 @@ const MonthPage = () => {
   const dayData = useMemo(() => {
     const data = Array(daysInMonth).fill(null).map(() => ({ pnl: 0, count: 0 }));
     entries.forEach(entry => {
-      if ((entry.year == year || String(entry.year) === String(year)) && entry.month == month) {
+      if (String(entry.year) === String(year) && String(entry.month) === String(month)) {
         const idx = parseInt(entry.day, 10) - 1;
         if (idx >= 0 && idx < daysInMonth) {
           data[idx].pnl += Number(entry.pnl) || 0;

@@ -13,6 +13,7 @@ const DayPage = () => {
   const { month, day } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const year = useParams().year || new Date().getFullYear();
   const [entries, setEntries] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -48,8 +49,8 @@ const DayPage = () => {
   const handleAddEntry = async (entry) => {
     if (!user) return;
     const entriesCol = collection(db, 'journalEntries', user, 'entries');
-    await addDoc(entriesCol, { ...entry, month, day });
-    setEntries(prev => [...prev, { ...entry, month, day }]);
+    await addDoc(entriesCol, { ...entry, year: String(year), month: String(month), day: String(day) });
+    setEntries(prev => [...prev, { ...entry, year: String(year), month: String(month), day: String(day) }]);
     setShowForm(false);
   };
 
