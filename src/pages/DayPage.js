@@ -1,24 +1,36 @@
-import React, { useState, useContext } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useState, useContext, useEffect } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import JournalEntryForm from "../components/JournalEntryForm";
 import JournalEntryList from "../components/JournalEntryList";
 import { UserContext } from "../App";
-
-const getStorageKey = (user, month, day) => `journal-${user}-${new Date().getFullYear()}-${month}-${day}`;
+import { db } from '../firebase';
+import { collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
+import Spinner from '../components/MatrixLoader';
+import GlitchTitle from '../components/GlitchTitle';
 
 const DayPage = () => {
   const { user } = useContext(UserContext);
   const { month, day } = useParams();
   const navigate = useNavigate();
-  // Always call hooks first!
-  const [entries, setEntries] = useState(() => {
-    if (!month || !day || !user) return [];
-    const saved = localStorage.getItem(getStorageKey(user, month, day));
-    return saved ? JSON.parse(saved) : [];
-  });
+  const location = useLocation();
+  const [entries, setEntries] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Now do the conditional check
+  useEffect(() => {
+    if (!user || !month || !day) return;
+    const fetchEntries = async () => {
+      setLoading(true);
+      const entriesCol = collection(db, 'journalEntries', user, 'entries');
+      const q = query(entriesCol, where('month', '==', month), where('day', '==', day), orderBy('created', 'asc'));
+      const snap = await getDocs(q);
+      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      setEntries(data);
+      setLoading(false);
+    };
+    fetchEntries();
+  }, [user, month, day]);
+
   if (!month || !day) {
     console.warn("DayPage: missing month or day param", { month, day });
     return <div className="text-red-400 p-8">Invalid day URL. (Missing month or day param)</div>;
@@ -33,27 +45,34 @@ const DayPage = () => {
     initialAccountBalance = (prevBalance + prevPnl).toFixed(2);
   }
 
-  const handleAddEntry = (entry) => {
-    const updated = [...entries, entry];
-    setEntries(updated);
-    localStorage.setItem(getStorageKey(user, month, day), JSON.stringify(updated));
+  const handleAddEntry = async (entry) => {
+    if (!user) return;
+    const entriesCol = collection(db, 'journalEntries', user, 'entries');
+    await addDoc(entriesCol, { ...entry, month, day });
+    setEntries(prev => [...prev, { ...entry, month, day }]);
     setShowForm(false);
   };
 
   return (
-    <div className="flex flex-col items-center">
-      <button className="self-start mb-4 text-gray-400 hover:text-gray-200" onClick={() => navigate(-1)}>&larr; Back</button>
-      <h2 className="text-2xl font-bold mb-6">Entries for {month}-{day}</h2>
-      <JournalEntryList entries={entries} />
-      {showForm ? (
+    <div className="flex flex-col items-center w-full relative">
+      {location.state && location.state.date && (
+        <div className="absolute top-2 right-8 text-xs text-neutral-400 font-mono opacity-80 select-none">
+          {location.state.date}
+        </div>
+      )}
+      <div className="sticky top-4 z-30 w-full flex justify-center mb-6">
+        {!showForm && (
+          <button
+            className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded shadow"
+            onClick={() => setShowForm(true)}
+          >
+            Add Entry
+          </button>
+        )}
+      </div>
+      {loading ? <div className="flex justify-center items-center py-24"><Spinner size={48} /></div> : <JournalEntryList entries={entries} />}
+      {showForm && (
         <JournalEntryForm onSave={handleAddEntry} onCancel={() => setShowForm(false)} initialAccountBalance={initialAccountBalance} />
-      ) : (
-        <button
-          className="mt-6 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded shadow"
-          onClick={() => setShowForm(true)}
-        >
-          Add Entry
-        </button>
       )}
     </div>
   );

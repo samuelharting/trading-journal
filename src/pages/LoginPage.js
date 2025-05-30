@@ -1,5 +1,8 @@
 import React, { useState, useContext } from 'react';
 import { UserContext } from '../App';
+import { db } from '../firebase';
+import { collection, doc, getDoc, setDoc, getDocs, addDoc } from 'firebase/firestore';
+import sha256 from 'crypto-js/sha256';
 
 const getUserPin = (username) => {
   const users = JSON.parse(localStorage.getItem('journalUsers') || '{}');
@@ -17,24 +20,33 @@ const LoginPage = () => {
   const [pin, setPin] = useState('');
   const [mode, setMode] = useState('login'); // login or create
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!username || pin.length !== 4) {
       setError('Enter username and 4-digit PIN');
       return;
     }
-    const existingPin = getUserPin(username);
-    if (existingPin) {
-      if (existingPin === pin) {
+    setLoading(true);
+    const userRef = doc(collection(db, 'users'), username);
+    const userSnap = await getDoc(userRef);
+    const hashedPin = sha256(pin).toString();
+    if (userSnap.exists()) {
+      if (userSnap.data().pin === hashedPin) {
+        // Migrate localStorage data if needed
+        await migrateLocalDataToFirestore(username);
         login(username);
       } else {
         setError('Incorrect PIN');
       }
     } else {
-      setUserPin(username, pin);
+      // Create new user
+      await setDoc(userRef, { pin: hashedPin });
+      await migrateLocalDataToFirestore(username);
       login(username);
     }
+    setLoading(false);
   };
 
   return (
@@ -59,10 +71,54 @@ const LoginPage = () => {
           inputMode="numeric"
         />
         {error && <div className="text-red-400 text-sm font-semibold">{error}</div>}
-        <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white rounded-md p-3 font-bold text-lg transition-all">{getUserPin(username) ? 'Login' : 'Create Account'}</button>
+        <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white rounded-md p-3 font-bold text-lg transition-all" disabled={loading}>{loading ? 'Loading...' : (mode === 'login' ? 'Login' : 'Create Account')}</button>
       </form>
     </div>
   );
 };
+
+// Helper: migrate localStorage data to Firestore
+async function migrateLocalDataToFirestore(username) {
+  // Migrate journal entries
+  const journalEntries = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key.startsWith(`journal-${username}-`)) {
+      try {
+        const dayEntries = JSON.parse(localStorage.getItem(key));
+        if (Array.isArray(dayEntries)) {
+          dayEntries.forEach(entry => {
+            journalEntries.push(entry);
+          });
+        }
+      } catch {}
+    }
+  }
+  if (journalEntries.length > 0) {
+    const entriesCol = collection(db, 'journalEntries', username, 'entries');
+    // Clear existing entries in Firestore for this user (optional, for idempotency)
+    const existing = await getDocs(entriesCol);
+    for (const docSnap of existing.docs) {
+      await docSnap.ref.delete();
+    }
+    // Add all entries
+    for (const entry of journalEntries) {
+      await addDoc(entriesCol, entry);
+    }
+  }
+  // Migrate favorites
+  const favKey = `favoriteTrades-${username}`;
+  const favs = localStorage.getItem(favKey);
+  if (favs) {
+    await setDoc(doc(db, 'favorites', username), { data: JSON.parse(favs) });
+  }
+  // Optionally, remove migrated data from localStorage
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key.startsWith(`journal-${username}-`) || key === favKey) {
+      localStorage.removeItem(key);
+    }
+  }
+}
 
 export default LoginPage; 
