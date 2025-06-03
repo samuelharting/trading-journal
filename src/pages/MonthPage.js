@@ -7,7 +7,7 @@ import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 import GlitchTitle from '../components/GlitchTitle';
-import { CalendarIcon } from '@heroicons/react/24/outline';
+import { CalendarIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -66,6 +66,13 @@ const MonthPage = () => {
 
   return (
     <div className="w-full min-h-screen bg-black pt-8 px-8">
+      <button
+        className="flex items-center gap-2 mb-4 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] rounded shadow"
+        onClick={() => navigate('/')}
+      >
+        <ArrowLeftIcon className="w-5 h-5" />
+        Back
+      </button>
       {loading ? (
         <div className="flex flex-col gap-6 w-full max-w-5xl mx-auto py-24">
           <div className="bg-white/10 backdrop-blur-md rounded-2xl h-16 w-1/3 animate-pulse mb-4 shadow-2xl" />

@@ -16,8 +16,8 @@ import { useNavigate } from "react-router-dom";
 
 function getStats(entries) {
   if (!entries.length) return null;
-  // Only include entries with a non-zero PnL or RR for trade stats
-  const tradeEntries = entries.filter(e => (e.pnl !== undefined && e.pnl !== null && e.pnl !== "" && Number(e.pnl) !== 0) || (e.rr !== undefined && e.rr !== null && e.rr !== "" && Number(e.rr) !== 0));
+  // Only include entries that are not deposits for trade stats
+  const tradeEntries = entries.filter(e => !e.isDeposit && ((e.pnl !== undefined && e.pnl !== null && e.pnl !== "" && Number(e.pnl) !== 0) || (e.rr !== undefined && e.rr !== null && e.rr !== "" && Number(e.rr) !== 0)));
   const totalPnl = tradeEntries.reduce((sum, e) => sum + (Number(e.pnl) || 0), 0);
   const avgPnl = tradeEntries.length ? totalPnl / tradeEntries.length : 0;
   const avgDuration = tradeEntries.length ? tradeEntries.reduce((sum, e) => sum + (parseFloat(e.duration) || 0), 0) / tradeEntries.length : 0;
@@ -72,7 +72,8 @@ function getEquityCurve(entries) {
 function getStreaks(entries) {
   let greenStreak = 0, lossStreak = 0, maxGreen = 0, maxLoss = 0;
   let prevWin = null;
-  entries.forEach(e => {
+  // Only count non-deposit entries
+  entries.filter(e => !e.isDeposit).forEach(e => {
     const pnl = Number(e.pnl);
     if (pnl > 0) {
       greenStreak++;
@@ -95,7 +96,8 @@ function getStreaks(entries) {
 
 function getDailyPnl(entries) {
   const byDay = {};
-  entries.forEach(e => {
+  // Only count non-deposit entries
+  entries.filter(e => !e.isDeposit).forEach(e => {
     const d = new Date(e.created);
     const day = d.toLocaleDateString();
     byDay[day] = (byDay[day] || 0) + (Number(e.pnl) || 0);

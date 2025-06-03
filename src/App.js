@@ -8,6 +8,7 @@ import ContextPage from "./pages/ContextPage";
 import SummaryPage from "./pages/SummaryPage";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
+import NotebookPage from "./pages/NotebookPage";
 
 export const UserContext = createContext();
 
@@ -38,6 +39,7 @@ function App() {
               <Route path="/day/:month/:day" element={<DayPage />} />
               <Route path="/trades" element={<TradesPage />} />
               <Route path="/context" element={<ContextPage />} />
+              <Route path="/notebook" element={<NotebookPage />} />
               <Route path="/summary" element={<SummaryPage />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>

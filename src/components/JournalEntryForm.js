@@ -7,7 +7,8 @@ import {
   CameraIcon,
   DocumentTextIcon,
   FaceSmileIcon,
-  ScaleIcon
+  ScaleIcon,
+  BanknotesIcon
 } from "@heroicons/react/24/outline";
 import { storage } from '../firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
@@ -50,12 +51,18 @@ const sectionVariants = {
   visible: (i) => ({ opacity: 1, y: 0, transition: { delay: i * 0.10, duration: 0.4 } })
 };
 
+const entryTypeOptions = [
+  { value: 'trade', label: 'Trade' },
+  { value: 'tape', label: 'Tape Reading' },
+  { value: 'deposit', label: 'Deposit/Paycheck' },
+];
+
 const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
   const [form, setForm] = useState({ ...initialState, accountBalance: initialAccountBalance ?? "" });
   const [screenshots, setScreenshots] = useState([]);
   const [accountManuallyEdited, setAccountManuallyEdited] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [tapeReading, setTapeReading] = useState(false);
+  const [entryType, setEntryType] = useState('trade');
   const fileInputRef = useRef();
   const [dragActive, setDragActive] = useState(false);
 
@@ -146,13 +153,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
     setScreenshots(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handleTapeToggle = () => {
-    setTapeReading((prev) => !prev);
-    // If toggling on, clear PnL and RR
-    if (!tapeReading) {
-      setForm((prev) => ({ ...prev, pnl: "", rr: "" }));
-    }
-  };
+  const handleEntryTypeChange = (e) => setEntryType(e.target.value);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -169,41 +170,49 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
     setUploading(false);
     onSave({
       ...form,
-      pnl: tapeReading ? 0 : parseFloat(form.pnl) || 0,
-      rr: tapeReading ? 0 : parseFloat(form.rr) || 0,
+      pnl: entryType === 'trade' ? parseFloat(form.pnl) || 0 : 0,
+      rr: entryType === 'trade' ? parseFloat(form.rr) || 0 : 0,
       accountBalance: parseFloat(form.accountBalance) || 0,
       screenshots: urls,
       created: new Date().toISOString(),
-      tapeReading,
+      tapeReading: entryType === 'tape',
+      isDeposit: entryType === 'deposit',
     });
     setForm(initialState);
     setScreenshots([]);
-    setTapeReading(false);
   };
 
   return (
     <form onSubmit={handleSubmit} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-95">
       <motion.div initial="hidden" animate="visible" variants={{}} className="w-full h-full bg-black p-0 flex flex-col gap-10 overflow-y-auto border-none px-2 sm:px-8">
-        {/* Tape Reading Toggle */}
+        {/* Entry Type Dropdown */}
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
           className="flex items-center gap-4 px-8 pt-2 pb-2">
-          <ScaleIcon className="w-7 h-7 text-green-400" />
-          <label className="text-lg font-semibold text-[#e5e5e5]">Tape Reading Only (Non-Trade Entry)</label>
-          <button
-            type="button"
-            onClick={handleTapeToggle}
-            className={`w-14 h-8 flex items-center rounded-full p-1 transition-colors duration-200 ${tapeReading ? 'bg-green-500' : 'bg-neutral-700'}`}
-            aria-pressed={tapeReading}
+          <label className="text-lg font-semibold text-[#e5e5e5]">Entry Type</label>
+          <select
+            value={entryType}
+            onChange={handleEntryTypeChange}
+            className="bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all"
           >
-            <span
-              className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-200 ${tapeReading ? 'translate-x-6' : 'translate-x-0'}`}
-            />
-          </button>
+            {entryTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
         </motion.div>
-        {/* Tape Reading Mode: Only show image upload and notes */}
-        {tapeReading ? (
+        {/* Render fields based on entryType */}
+        {entryType === 'deposit' ? (
+          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+            className="bg-blue-900/40 rounded-xl px-8 py-6 mb-2 shadow-md flex flex-col gap-8">
+            <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
+              <label className="text-xs font-semibold text-blue-300 mb-1">Account Balance After Deposit</label>
+              <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all" />
+            </div>
+            <div className="flex flex-col gap-2 w-full">
+              <label className="text-xl font-extrabold text-blue-400 mb-1">Notes (optional)</label>
+              <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-2xl font-bold" />
+            </div>
+          </motion.div>
+        ) : entryType === 'tape' ? (
           <>
-            {/* Screenshots Upload Section */}
+            {/* Tape Reading: Only screenshots and notes */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
               className={`relative flex flex-col items-center justify-center px-8 pt-10 pb-6 rounded-2xl border-2 border-neutral-800 bg-neutral-900/80 shadow-lg mb-2`}
               onDragOver={handleDragOver}
@@ -241,7 +250,6 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                 )}
               </div>
             </motion.div>
-            {/* Notes Section Only */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
               className="bg-neutral-900/80 rounded-xl px-8 py-6 mb-2 shadow-md">
               <div className="flex items-center gap-3 mb-6">
@@ -356,11 +364,11 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
               <div className="flex flex-wrap gap-8 w-full">
                 <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">P&L</label>
-                  <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-green-700 transition-all" placeholder="$" disabled={tapeReading} />
+                  <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-green-700 transition-all" placeholder="$" disabled={entryType !== 'trade'} />
                 </div>
                 <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">R:R <span className="ml-1 text-neutral-500">(Risk to Reward Ratio)</span></label>
-                  <input name="rr" type="number" step="0.01" value={form.rr} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-purple-700 transition-all" placeholder="e.g. 2.5" disabled={tapeReading} />
+                  <input name="rr" type="number" step="0.01" value={form.rr} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-purple-700 transition-all" placeholder="e.g. 2.5" disabled={entryType !== 'trade'} />
                 </div>
                 <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">Account Balance</label>

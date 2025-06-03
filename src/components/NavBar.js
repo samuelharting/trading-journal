@@ -5,7 +5,7 @@ import { PlusIcon } from '@heroicons/react/24/solid';
 import { UserContext } from "../App";
 import { db } from '../firebase';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { CalendarIcon, DocumentTextIcon, ChartBarIcon } from '@heroicons/react/24/outline';
+import { CalendarIcon, DocumentTextIcon, ChartBarIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 
 const NavBar = () => {
   const { user } = useContext(UserContext);
@@ -21,8 +21,8 @@ const NavBar = () => {
         <polyline points="19,13 22,13 22,10" />
       </svg>
     ) },
-    { label: "Plus", path: "plus", icon: <PlusIcon className="w-7 h-7 text-[#e5e5e5]" />, isPlus: true },
     { label: "Context", path: "/context", icon: <DocumentTextIcon className="w-6 h-6 text-[#e5e5e5]" /> },
+    { label: "Notebook", path: "/notebook", icon: <BookOpenIcon className="w-6 h-6 text-[#e5e5e5]" /> },
     { label: "Summary", path: "/summary", icon: <ChartBarIcon className="w-6 h-6 text-[#e5e5e5]" /> },
   ];
 
@@ -39,37 +39,35 @@ const NavBar = () => {
 
   return (
     <nav className="fixed top-0 left-0 w-full z-40 bg-black flex items-center h-16 px-4">
-      <div className="flex gap-6 w-full justify-center items-center">
+      <div className="flex gap-6 w-full justify-center items-center relative">
         {navButtons.map((btn, idx) => (
-          btn.isPlus ? (
-            <motion.button
-              whileHover={{ scale: 1.06 }}
-              whileTap={{ scale: 0.98 }}
-              key={btn.label}
-              className="px-5 py-2 rounded-md bg-neutral-900 hover:bg-neutral-800 focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center"
-              title="Quick Add Entry"
-              onClick={() => {
-                const now = new Date();
-                const month = now.getMonth() + 1;
-                const day = now.getDate();
-                navigate(`/day/${month}/${day}`, { state: { date: now.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) } });
-              }}
-            >
-              {btn.icon}
-            </motion.button>
-          ) : (
-            <motion.button
-              whileHover={{ scale: 1.06 }}
-              whileTap={{ scale: 0.98 }}
-              key={btn.path}
-              className={`px-5 py-2 rounded-md bg-neutral-900 hover:bg-neutral-800 focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === btn.path ? 'text-green-400' : 'text-[#e5e5e5]'}`}
-              onClick={() => navigate(btn.path)}
-              title={btn.label}
-            >
-              {btn.icon}
-            </motion.button>
-          )
+          <motion.button
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.98 }}
+            key={btn.path}
+            className={`px-5 py-2 rounded-md bg-neutral-900 hover:bg-neutral-800 focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === btn.path ? 'text-green-400' : 'text-[#e5e5e5]'}`}
+            onClick={() => navigate(btn.path)}
+            title={btn.label}
+          >
+            {btn.icon}
+          </motion.button>
         ))}
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center">
+          <motion.button
+            whileHover={{ scale: 1.12 }}
+            whileTap={{ scale: 0.96 }}
+            className="px-5 py-2 rounded-full bg-blue-700 hover:bg-blue-600 focus:bg-blue-800 transition-all duration-150 border-none outline-none shadow-lg flex items-center justify-center text-white text-xl font-bold drop-shadow-xl"
+            title="Quick Add Entry"
+            onClick={() => {
+              const now = new Date();
+              const month = now.getMonth() + 1;
+              const day = now.getDate();
+              navigate(`/day/${month}/${day}`, { state: { date: now.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) } });
+            }}
+          >
+            <PlusIcon className="w-8 h-8 text-white" />
+          </motion.button>
+        </div>
       </div>
     </nav>
   );

@@ -7,6 +7,7 @@ import { db } from '../firebase';
 import { collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 import GlitchTitle from '../components/GlitchTitle';
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 const DayPage = () => {
   const { user } = useContext(UserContext);
@@ -56,6 +57,15 @@ const DayPage = () => {
 
   return (
     <div className="flex flex-col items-center w-full relative">
+      <div className="absolute left-0 top-4 z-30">
+        <button
+          className="flex items-center gap-2 ml-6 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] rounded shadow"
+          onClick={() => navigate(`/month/${year}/${month}`)}
+        >
+          <ArrowLeftIcon className="w-5 h-5" />
+          Back
+        </button>
+      </div>
       {location.state && location.state.date && (
         <div className="absolute top-2 right-8 text-xs text-neutral-400 font-mono opacity-80 select-none">
           {location.state.date}

@@ -55,7 +55,8 @@ const ContextPage = () => {
 
   useEffect(() => {
     let text = "";
-    entries.slice().reverse().forEach(entry => {
+    const sortedEntries = [...entries].sort((a, b) => new Date(b.created) - new Date(a.created));
+    sortedEntries.forEach(entry => {
       const date = new Date(entry.created);
       const dateStr = date.toLocaleDateString();
       text += `=== ${dateStr} ===\n`;
