@@ -1,4 +1,4 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { PlusIcon } from '@heroicons/react/24/solid';
@@ -13,6 +13,7 @@ const NavBar = () => {
   const location = useLocation();
   const [showReset, setShowReset] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const navRef = useRef();
   const navButtons = [
     { label: "Home", path: "/", icon: <CalendarIcon className="w-6 h-6 text-[#e5e5e5]" /> },
     { label: "Trades", path: "/trades", icon: (
@@ -21,9 +22,27 @@ const NavBar = () => {
         <polyline points="19,13 22,13 22,10" />
       </svg>
     ) },
-    { label: "Context", path: "/context", icon: <DocumentTextIcon className="w-6 h-6 text-[#e5e5e5]" /> },
     { label: "Notebook", path: "/notebook", icon: <BookOpenIcon className="w-6 h-6 text-[#e5e5e5]" /> },
     { label: "Summary", path: "/summary", icon: <ChartBarIcon className="w-6 h-6 text-[#e5e5e5]" /> },
+  ];
+
+  const contextBtn = { label: "Context", path: "/context", icon: <DocumentTextIcon className="w-6 h-6 text-[#e5e5e5]" /> };
+  const quickAddBtn = {
+    label: "Quick Add",
+    path: null,
+    icon: <PlusIcon className="w-7 h-7 text-white" />,
+    onClick: () => {
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      navigate(`/day/${month}/${day}`, { state: { date: now.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) } });
+    },
+  };
+  const navButtonsWithQuickAdd = [
+    navButtons[0],
+    navButtons[1],
+    quickAddBtn,
+    ...navButtons.slice(2).filter(btn => btn.label !== "Context")
   ];
 
   const handleReset = async () => {
@@ -37,16 +56,18 @@ const NavBar = () => {
     window.location.reload();
   };
 
+  const activeIdx = navButtonsWithQuickAdd.findIndex(btn => btn.path && location.pathname === btn.path);
+
   return (
     <nav className="fixed top-0 left-0 w-full z-40 bg-black flex items-center h-16 px-4">
       <div className="flex gap-6 w-full justify-center items-center relative">
-        {navButtons.map((btn, idx) => (
+        {navButtonsWithQuickAdd.map((btn, idx) => (
           <motion.button
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.98 }}
-            key={btn.path}
-            className={`px-5 py-2 rounded-md bg-neutral-900 hover:bg-neutral-800 focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === btn.path ? 'text-green-400' : 'text-[#e5e5e5]'}`}
-            onClick={() => navigate(btn.path)}
+            key={btn.path || btn.label}
+            className={`px-5 py-2 rounded-md ${btn.label === 'Quick Add' ? 'bg-blue-700 hover:bg-blue-600 text-white font-bold shadow-lg' : 'bg-neutral-900 hover:bg-neutral-800'} focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === btn.path ? 'text-green-400' : 'text-[#e5e5e5]'}`}
+            onClick={btn.onClick ? btn.onClick : () => navigate(btn.path)}
             title={btn.label}
           >
             {btn.icon}
@@ -54,18 +75,14 @@ const NavBar = () => {
         ))}
         <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center">
           <motion.button
-            whileHover={{ scale: 1.12 }}
-            whileTap={{ scale: 0.96 }}
-            className="px-5 py-2 rounded-full bg-blue-700 hover:bg-blue-600 focus:bg-blue-800 transition-all duration-150 border-none outline-none shadow-lg flex items-center justify-center text-white text-xl font-bold drop-shadow-xl"
-            title="Quick Add Entry"
-            onClick={() => {
-              const now = new Date();
-              const month = now.getMonth() + 1;
-              const day = now.getDate();
-              navigate(`/day/${month}/${day}`, { state: { date: now.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) } });
-            }}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.98 }}
+            key={contextBtn.path}
+            className={`px-5 py-2 rounded-md bg-neutral-900 hover:bg-neutral-800 focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === contextBtn.path ? 'text-green-400' : 'text-[#e5e5e5]'}`}
+            onClick={() => navigate(contextBtn.path)}
+            title={contextBtn.label}
           >
-            <PlusIcon className="w-8 h-8 text-white" />
+            {contextBtn.icon}
           </motion.button>
         </div>
       </div>

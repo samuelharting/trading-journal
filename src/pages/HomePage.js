@@ -17,7 +17,12 @@ const months = [
 const HomePage = () => {
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
-  const year = new Date().getFullYear();
+  // Year dropdown logic: always start at 2025, go up to max(current year + 1, selected year, 2026)
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const maxYear = Math.max(currentYear + 1, year, 2026); // always show at least 2026 and next year
+  const yearOptions = [];
+  for (let y = 2025; y <= maxYear; y++) yearOptions.push(y);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,7 +43,7 @@ const HomePage = () => {
   const monthData = useMemo(() => {
     const data = Array(12).fill(null).map(() => ({ pnl: 0, count: 0 }));
     entries.forEach(entry => {
-      if (entry.year == year || String(entry.year) === String(year) || entry.month) {
+      if (String(entry.year) === String(year)) {
         const idx = parseInt(entry.month, 10) - 1;
         if (idx >= 0 && idx < 12) {
           data[idx].pnl += Number(entry.pnl) || 0;
@@ -62,7 +67,18 @@ const HomePage = () => {
         <>
           <div className="flex items-center gap-3 mb-6 mt-2">
             <CalendarIcon className="w-7 h-7 text-blue-400" />
-            <span className="text-3xl font-bold text-[#e5e5e5]">{year} Overview</span>
+            {/* Year dropdown */}
+            <select
+              className="ml-2 bg-neutral-900 text-[#e5e5e5] border border-neutral-700 rounded px-2 py-1 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={year}
+              onChange={e => setYear(Number(e.target.value))}
+              style={{ width: 80 }}
+            >
+              {yearOptions.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <span className="text-3xl font-bold text-[#e5e5e5]"> Overview</span>
             <div className="flex-1 border-b border-white/10 ml-4" />
           </div>
           <motion.div

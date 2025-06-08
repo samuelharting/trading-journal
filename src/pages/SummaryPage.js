@@ -13,6 +13,7 @@ import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 import GlitchTitle from '../components/GlitchTitle';
 import { useNavigate } from "react-router-dom";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, defs, linearGradient, stop } from 'recharts';
 
 function getStats(entries) {
   if (!entries.length) return null;
@@ -150,6 +151,76 @@ function formatDurationMins(mins) {
   return `${minutes}min`;
 }
 
+// EquityCurveChart component
+function EquityCurveChart({ points }) {
+  if (!points || points.length < 2) return <div className="w-full h-80 flex items-center justify-center text-neutral-400">Not enough data for equity curve.</div>;
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <AreaChart data={points} margin={{ top: 24, right: 24, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.7} />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity={0.1} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#2226" />
+        <XAxis dataKey="x" tick={{ fill: '#e5e5e5', fontSize: 14 }} hide />
+        <YAxis tick={{ fill: '#e5e5e5', fontSize: 14 }} width={60} domain={['auto', 'auto']} />
+        <Tooltip contentStyle={{ background: '#18181b', border: 'none', color: '#e5e5e5', borderRadius: 8 }} labelFormatter={i => `Trade #${i + 1}`} formatter={(v) => [`$${v.toFixed(2)}`, 'Balance']} />
+        <Area type="monotone" dataKey="y" stroke="#38bdf8" fillOpacity={1} fill="url(#equityGradient)" strokeWidth={4} dot={{ r: 3, fill: '#38bdf8', stroke: '#fff', strokeWidth: 1.5 }} isAnimationActive={true} animationDuration={1200} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Add helper to group entries by week for the current month
+function getWeeksOfMonth(year, month) {
+  // Returns an array of [startDay, endDay] for each week in the month
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+  const weeks = [];
+  let current = new Date(firstDay);
+  while (current <= lastDay) {
+    const weekStart = new Date(current);
+    const weekEnd = new Date(current);
+    weekEnd.setDate(weekEnd.getDate() + (6 - weekEnd.getDay() + 1) % 7);
+    if (weekEnd > lastDay) weekEnd.setTime(lastDay.getTime());
+    weeks.push([new Date(weekStart), new Date(weekEnd)]);
+    current.setDate(current.getDate() + 7 - (current.getDay() + 6) % 7);
+  }
+  return weeks;
+}
+
+function getWeeklyPnlsForMonth(entries, year, month) {
+  // Only entries in the given month
+  const filtered = entries.filter(e => String(e.year) === String(year) && String(e.month) === String(month));
+  const daysInMonth = new Date(year, month, 0).getDate();
+  // Build a map day->PnL
+  const dayPnls = {};
+  filtered.forEach(e => {
+    const day = parseInt(e.day, 10);
+    if (!isNaN(day)) {
+      dayPnls[day] = (dayPnls[day] || 0) + (Number(e.pnl) || 0);
+    }
+  });
+  // Get week ranges
+  const weeks = [];
+  let weekStart = 1;
+  let weekEnd = 7 - (new Date(year, month - 1, 1).getDay() + 6) % 7;
+  if (weekEnd < 1) weekEnd = 7;
+  while (weekStart <= daysInMonth) {
+    if (weekEnd > daysInMonth) weekEnd = daysInMonth;
+    let sum = 0;
+    for (let d = weekStart; d <= weekEnd; d++) {
+      sum += dayPnls[d] || 0;
+    }
+    weeks.push({ weekStart, weekEnd, pnl: sum });
+    weekStart = weekEnd + 1;
+    weekEnd = weekStart + 6;
+  }
+  return weeks;
+}
+
 const SummaryPage = () => {
   const { user } = useContext(UserContext);
   const [stats, setStats] = useState(null);
@@ -249,6 +320,21 @@ const SummaryPage = () => {
   }));
   const weeklyTrend = stats && stats.byWeek ? Object.entries(stats.byWeek).map(([week, value]) => ({ week, value })) : [];
 
+  // Get current year/month
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  // Get weekly PnLs for current month
+  const weeklyPnls = getWeeklyPnlsForMonth(entries, currentYear, currentMonth);
+  // Get monthly PnL for current month
+  const monthlyPnl = weeklyPnls.reduce((sum, w) => sum + w.pnl, 0);
+
+  // Find the most recent week and month
+  const mostRecentWeekKey = weeklyRows.length > 0 ? weeklyRows[0][0] : null;
+  const mostRecentMonthKey = monthlyRows.length > 0 ? monthlyRows[0][0] : null;
+  const mostRecentWeekPnl = mostRecentWeekKey ? stats.byWeek[mostRecentWeekKey] : 0;
+  const mostRecentMonthPnl = mostRecentMonthKey ? stats.byMonth[mostRecentMonthKey] : 0;
+
   const handleReset = async () => {
     if (!window.confirm('Are you sure you want to reset your account? This will delete ALL your journal entries and cannot be undone.')) return;
     if (!user) return;
@@ -294,36 +380,9 @@ const SummaryPage = () => {
                 <ChartBarIcon className="w-7 h-7 text-blue-400" />
                 Equity Curve
               </div>
-              {curve.length > 1 && (
-                <svg width={width} height={height} className="w-full max-w-2xl">
-                  <defs>
-                    <linearGradient id="curveGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8" />
-                      <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.1" />
-                    </linearGradient>
-                  </defs>
-                  <polyline
-                    fill="none"
-                    stroke="url(#curveGradient)"
-                    strokeWidth="6"
-                    points={curve.map((y, i) => `${(i / (curve.length - 1)) * width},${height - ((y - minY) / (maxY - minY || 1)) * (height - 40) - 20}`).join(" ")}
-                  />
-                  {/* Dot at the last point */}
-                  {curve.length > 1 && (
-                    <circle
-                      cx={width}
-                      cy={height - ((curve[curve.length - 1] - minY) / (maxY - minY || 1)) * (height - 40) - 20}
-                      r="8"
-                      fill="#38bdf8"
-                      stroke="#fff"
-                      strokeWidth="2"
-                    />
-                  )}
-                  {/* Y-axis labels */}
-                  <text x="10" y="30" fill="#fff" fontSize="16">{maxY.toFixed(2)}</text>
-                  <text x="10" y={height - 10} fill="#fff" fontSize="16">{minY.toFixed(2)}</text>
-                </svg>
-              )}
+              <div className="w-full max-w-2xl h-80 flex items-center justify-center">
+                <EquityCurveChart points={points} />
+              </div>
             </motion.div>
             {/* Account Balance + Day PNL (Right, 1/3) */}
             <div className="flex flex-col gap-6 flex-1 min-w-[260px] max-w-sm justify-start">
@@ -399,7 +458,7 @@ const SummaryPage = () => {
             <motion.div initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3 }} className="bg-white/10 backdrop-blur-md rounded-xl p-4 flex flex-col border border-white/10 shadow-2xl">
               <div className="text-xl font-bold mb-2">Weekly P&L</div>
               <div className="flex flex-col gap-4">
-                {mostRecentWeek && (
+                {weeklyPnls.length > 0 && (
                   <motion.div
                     initial={{ opacity: 0, x: 40 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -407,11 +466,11 @@ const SummaryPage = () => {
                     className="bg-white/10 backdrop-blur-md rounded-xl p-4 flex flex-col border border-white/10 shadow-2xl"
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-[#e5e5e5] text-base">{mostRecentWeek[0]}</span>
-                      <span className={mostRecentWeek[1] > 0 ? "text-green-400 font-bold" : mostRecentWeek[1] < 0 ? "text-red-400 font-bold" : "text-neutral-300 font-bold"}>{mostRecentWeek[1] > 0 ? "+" : ""}{mostRecentWeek[1].toFixed(2)}</span>
+                      <span className="font-semibold text-[#e5e5e5] text-base">Week {weeklyPnls.length}</span>
+                      <span className={weeklyPnls[weeklyPnls.length-1].pnl > 0 ? "text-green-400 font-bold" : weeklyPnls[weeklyPnls.length-1].pnl < 0 ? "text-red-400 font-bold" : "text-neutral-300 font-bold"}>{weeklyPnls[weeklyPnls.length-1].pnl > 0 ? "+" : ""}{weeklyPnls[weeklyPnls.length-1].pnl.toFixed(2)}</span>
                     </div>
                     <div className="w-full h-2 rounded bg-neutral-800 overflow-hidden">
-                      <div className={mostRecentWeek[1] > 0 ? "bg-green-500" : mostRecentWeek[1] < 0 ? "bg-red-500" : "bg-neutral-500"} style={{ width: `${Math.min(Math.abs(mostRecentWeek[1]) * 2, 100)}%`, height: '100%' }} />
+                      <div className={weeklyPnls[weeklyPnls.length-1].pnl > 0 ? "bg-green-500" : weeklyPnls[weeklyPnls.length-1].pnl < 0 ? "bg-red-500" : "bg-neutral-500"} style={{ width: `${Math.min(Math.abs(weeklyPnls[weeklyPnls.length-1].pnl) * 2, 100)}%`, height: '100%' }} />
                     </div>
                   </motion.div>
                 )}
@@ -421,22 +480,20 @@ const SummaryPage = () => {
             <motion.div initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3 }} className="bg-white/10 backdrop-blur-md rounded-xl p-4 flex flex-col border border-white/10 shadow-2xl">
               <div className="text-xl font-bold mb-2">Monthly P&L</div>
               <div className="flex flex-col gap-4">
-                {mostRecentMonth && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 40 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="bg-white/10 backdrop-blur-md rounded-xl p-4 flex flex-col border border-white/10 shadow-2xl"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-[#e5e5e5] text-base">{mostRecentMonth[0]}</span>
-                      <span className={mostRecentMonth[1] > 0 ? "text-green-400 font-bold" : mostRecentMonth[1] < 0 ? "text-red-400 font-bold" : "text-neutral-300 font-bold"}>{mostRecentMonth[1] > 0 ? "+" : ""}{mostRecentMonth[1].toFixed(2)}</span>
-                    </div>
-                    <div className="w-full h-2 rounded bg-neutral-800 overflow-hidden">
-                      <div className={mostRecentMonth[1] > 0 ? "bg-green-500" : mostRecentMonth[1] < 0 ? "bg-red-500" : "bg-neutral-500"} style={{ width: `${Math.min(Math.abs(mostRecentMonth[1]) * 2, 100)}%`, height: '100%' }} />
-                    </div>
-                  </motion.div>
-                )}
+                <motion.div
+                  initial={{ opacity: 0, x: 40 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-white/10 backdrop-blur-md rounded-xl p-4 flex flex-col border border-white/10 shadow-2xl"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-[#e5e5e5] text-base">{now.toLocaleString('default', { month: 'long' })} {currentYear}</span>
+                    <span className={monthlyPnl > 0 ? "text-green-400 font-bold" : monthlyPnl < 0 ? "text-red-400 font-bold" : "text-neutral-300 font-bold"}>{monthlyPnl > 0 ? "+" : ""}{monthlyPnl.toFixed(2)}</span>
+                  </div>
+                  <div className="w-full h-2 rounded bg-neutral-800 overflow-hidden">
+                    <div className={monthlyPnl > 0 ? "bg-green-500" : monthlyPnl < 0 ? "bg-red-500" : "bg-neutral-500"} style={{ width: `${Math.min(Math.abs(monthlyPnl) * 2, 100)}%`, height: '100%' }} />
+                  </div>
+                </motion.div>
               </div>
             </motion.div>
           </div>

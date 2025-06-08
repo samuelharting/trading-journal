@@ -37,11 +37,6 @@ const ContextPage = () => {
 
   useEffect(() => {
     if (!user) return;
-    if (sessionStorage.getItem(CONTEXT_CLEARED_KEY) === "1") {
-      setCombinedText("");
-      setLoading(false);
-      return;
-    }
     const fetchEntries = async () => {
       setLoading(true);
       const entriesCol = collection(db, 'journalEntries', user, 'entries');
@@ -73,7 +68,7 @@ const ContextPage = () => {
 
   const handleClear = () => {
     setCombinedText("");
-    sessionStorage.setItem(CONTEXT_CLEARED_KEY, "1");
+    sessionStorage.removeItem(CONTEXT_CLEARED_KEY);
   };
 
   return (
