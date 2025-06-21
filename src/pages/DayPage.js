@@ -66,11 +66,19 @@ const DayPage = () => {
           Back
         </button>
       </div>
-      {location.state && location.state.date && (
-        <div className="absolute top-2 right-8 text-xs text-neutral-400 font-mono opacity-80 select-none">
-          {location.state.date}
+      
+      {/* Big Bold Date Display */}
+      <div className="w-full text-center mb-8 mt-4">
+        <div className="text-4xl md:text-6xl font-bold text-[#e5e5e5] mb-2">
+          {new Date(year, month - 1, day).toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })}
         </div>
-      )}
+      </div>
+      
       <div className="sticky top-4 z-30 w-full flex justify-center mb-6">
         {!showForm && (
           <button

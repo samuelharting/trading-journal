@@ -39,7 +39,7 @@ const HomePage = () => {
     fetchEntries();
   }, [user]);
 
-  // Aggregate P&L by month
+  // Aggregate P&L and trade counts by month
   const monthData = useMemo(() => {
     const data = Array(12).fill(null).map(() => ({ pnl: 0, count: 0 }));
     entries.forEach(entry => {
@@ -47,7 +47,12 @@ const HomePage = () => {
         const idx = parseInt(entry.month, 10) - 1;
         if (idx >= 0 && idx < 12) {
           data[idx].pnl += Number(entry.pnl) || 0;
-          data[idx].count += 1;
+          
+          // Only count actual trades (not deposits, payouts, or tape reading)
+          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined;
+          if (isActualTrade) {
+            data[idx].count += 1;
+          }
         }
       }
     });
@@ -102,6 +107,7 @@ const HomePage = () => {
                   color={color}
                   pnl={pnl}
                   status={status}
+                  tradeCount={count}
                   onClick={() => navigate(`/month/${year}/${idx + 1}`)}
                   delay={idx * 0.03}
                 />

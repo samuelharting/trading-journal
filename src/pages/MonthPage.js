@@ -41,8 +41,12 @@ const MonthPage = () => {
       if (String(entry.year) === String(year) && String(entry.month) === String(month)) {
         const idx = parseInt(entry.day, 10) - 1;
         if (idx >= 0 && idx < daysInMonth) {
+          // Only count actual trades (not deposits, payouts, or tape reading)
+          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined;
           data[idx].pnl += Number(entry.pnl) || 0;
-          data[idx].count += 1;
+          if (isActualTrade) {
+            data[idx].count += 1;
+          }
         }
       }
     });
@@ -64,25 +68,35 @@ const MonthPage = () => {
     return grid;
   }, [year, month, daysInMonth]);
 
-  // Helper to compute weekly PnL for the month
+  // Helper to compute weekly PnL and trade counts for the month
   function getWeeklyPnls(entries, year, month, calendarGrid) {
     // Only entries in the given month
     const filtered = entries.filter(e => String(e.year) === String(year) && String(e.month) === String(month));
-    // Build a map day->PnL
+    // Build a map day->PnL and day->count
     const dayPnls = {};
+    const dayCounts = {};
     filtered.forEach(e => {
       const day = parseInt(e.day, 10);
       if (!isNaN(day)) {
         dayPnls[day] = (dayPnls[day] || 0) + (Number(e.pnl) || 0);
+        // Only count actual trades (not deposits, payouts, or tape reading)
+        const isActualTrade = !e.isDeposit && !e.isPayout && !e.isTapeReading && e.pnl !== undefined;
+        if (isActualTrade) {
+          dayCounts[day] = (dayCounts[day] || 0) + 1;
+        }
       }
     });
-    // For each week in the grid, sum the PnL for the days in that week
+    // For each week in the grid, sum the PnL and count for the days in that week
     return calendarGrid.map(weekArr => {
       let sum = 0;
+      let count = 0;
       weekArr.forEach(day => {
-        if (day && dayPnls[day]) sum += dayPnls[day];
+        if (day && dayPnls[day]) {
+          sum += dayPnls[day];
+          count += dayCounts[day] || 0;
+        }
       });
-      return sum;
+      return { pnl: sum, count };
     });
   }
 
@@ -158,6 +172,7 @@ const MonthPage = () => {
                         color={color}
                         pnl={pnl}
                         status={status}
+                        tradeCount={count}
                         onClick={() => navigate(`/day/${month}/${day}`)}
                         delay={weekIdx * 0.02 + idx * 0.01}
                       />
@@ -170,7 +185,7 @@ const MonthPage = () => {
                   {/* Weekly PnL pill */}
                   <div className="flex justify-center items-center h-full">
                     {(() => {
-                      const pnl = weeklyPnls[weekIdx];
+                      const { pnl, count } = weeklyPnls[weekIdx];
                       let bg = 'bg-neutral-800', text = 'text-neutral-200', icon = null, shadow = '';
                       if (pnl > 0) {
                         bg = 'bg-green-800'; text = 'text-green-200'; shadow = 'shadow-green-500/30';
@@ -184,10 +199,17 @@ const MonthPage = () => {
                         );
                       }
                       return (
-                        <span className={`px-4 py-2 rounded-full font-bold text-lg flex items-center justify-center min-w-[80px] ${bg} ${text} ${shadow} transition-all duration-200`} style={{ boxShadow: shadow ? `0 0 12px 2px ${shadow.split('-')[1]}` : undefined }}>
-                          {icon}
-                          {pnl > 0 ? '+' : pnl < 0 ? '' : ''}{typeof pnl === 'number' ? pnl.toFixed(2) : '0.00'}
-                        </span>
+                        <div className={`px-3 py-2 rounded-full font-bold text-sm flex flex-col items-center justify-center min-w-[80px] ${bg} ${text} ${shadow} transition-all duration-200`} style={{ boxShadow: shadow ? `0 0 12px 2px ${shadow.split('-')[1]}` : undefined }}>
+                          <div className="flex items-center">
+                            {icon}
+                            {pnl > 0 ? '+' : pnl < 0 ? '' : ''}{typeof pnl === 'number' ? pnl.toFixed(2) : '0.00'}
+                          </div>
+                          {count > 0 && (
+                            <div className="text-xs opacity-80 mt-1">
+                              {count} trade{count !== 1 ? 's' : ''}
+                            </div>
+                          )}
+                        </div>
                       );
                     })()}
                   </div>

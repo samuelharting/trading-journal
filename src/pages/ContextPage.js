@@ -9,6 +9,22 @@ import Spinner from '../components/MatrixLoader';
 const CONTEXT_CLEARED_KEY = "contextCleared";
 
 function entryToText(entry) {
+  // Handle tape reading entries
+  if (entry.tapeReading) {
+    return `Tape Reading: ${entry.notes || 'No notes'}`;
+  }
+  
+  // Handle deposit entries
+  if (entry.isDeposit) {
+    return `Account Balance: $${entry.accountBalance || 0} - ${entry.notes || 'No notes'}`;
+  }
+  
+  // Handle payout entries
+  if (entry.isPayout) {
+    return `Payout: $${Math.abs(entry.pnl || 0)} - Account Balance: $${entry.accountBalance || 0} - ${entry.notes || 'No notes'}`;
+  }
+  
+  // Handle regular trade entries
   return [
     `Ticker: ${entry.tickerTraded}`,
     `P&L: ${entry.pnl}`,

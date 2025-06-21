@@ -9,6 +9,7 @@ import SummaryPage from "./pages/SummaryPage";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import NotebookPage from "./pages/NotebookPage";
+import EditAccountPage from "./pages/EditAccountPage";
 
 export const UserContext = createContext();
 
@@ -41,6 +42,7 @@ function App() {
               <Route path="/context" element={<ContextPage />} />
               <Route path="/notebook" element={<NotebookPage />} />
               <Route path="/summary" element={<SummaryPage />} />
+              <Route path="/edit-account" element={<EditAccountPage />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </Layout>

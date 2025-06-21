@@ -7,7 +7,7 @@ const colorMap = {
   gray: "bg-neutral-900 hover:bg-neutral-800 border-neutral-700 border-2",
 };
 
-const CalendarBox = ({ label, onClick, color = "gray", pnl, status, delay = 0 }) => (
+const CalendarBox = ({ label, onClick, color = "gray", pnl, status, delay = 0, tradeCount = 0 }) => (
   <motion.button
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
@@ -18,11 +18,16 @@ const CalendarBox = ({ label, onClick, color = "gray", pnl, status, delay = 0 })
     onClick={onClick}
   >
     <div>{label}</div>
-    <div className="mt-3 text-2xl font-mono font-extrabold select-none">
+    <div className="mt-2 text-2xl font-mono font-extrabold select-none">
       <span className={color === "green" ? "text-green-300" : color === "red" ? "text-red-300" : "text-[#e5e5e5]"}>
         {pnl > 0 ? "+" : pnl < 0 ? "" : ""}{pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}
       </span>
     </div>
+    {tradeCount > 0 && (
+      <div className="mt-1 text-xs opacity-80">
+        {tradeCount} trade{tradeCount !== 1 ? 's' : ''}
+      </div>
+    )}
   </motion.button>
 );
 

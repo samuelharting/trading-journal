@@ -59,14 +59,14 @@ const NavBar = () => {
   const activeIdx = navButtonsWithQuickAdd.findIndex(btn => btn.path && location.pathname === btn.path);
 
   return (
-    <nav className="fixed top-0 left-0 w-full z-40 bg-black flex items-center h-16 px-4">
-      <div className="flex gap-6 w-full justify-center items-center relative">
+    <nav className="fixed top-0 left-0 w-full z-40 bg-black flex items-center h-16 px-2 sm:px-4">
+      <div className="flex gap-2 sm:gap-6 w-full justify-center items-center relative">
         {navButtonsWithQuickAdd.map((btn, idx) => (
           <motion.button
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.98 }}
             key={btn.path || btn.label}
-            className={`px-5 py-2 rounded-md ${btn.label === 'Quick Add' ? 'bg-blue-700 hover:bg-blue-600 text-white font-bold shadow-lg' : 'bg-neutral-900 hover:bg-neutral-800'} focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === btn.path ? 'text-green-400' : 'text-[#e5e5e5]'}`}
+            className={`px-2 sm:px-5 py-2 rounded-md ${btn.label === 'Quick Add' ? 'bg-blue-700 hover:bg-blue-600 text-white font-bold shadow-lg' : 'bg-neutral-900 hover:bg-neutral-800'} focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === btn.path ? 'text-green-400' : 'text-[#e5e5e5]'} min-w-[44px] min-h-[44px]`}
             onClick={btn.onClick ? btn.onClick : () => navigate(btn.path)}
             title={btn.label}
           >
@@ -78,7 +78,7 @@ const NavBar = () => {
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.98 }}
             key={contextBtn.path}
-            className={`px-5 py-2 rounded-md bg-neutral-900 hover:bg-neutral-800 focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === contextBtn.path ? 'text-green-400' : 'text-[#e5e5e5]'}`}
+            className={`px-2 sm:px-5 py-2 rounded-md bg-neutral-900 hover:bg-neutral-800 focus:bg-neutral-800 transition-all duration-150 border-none outline-none shadow-none flex items-center justify-center ${location.pathname === contextBtn.path ? 'text-green-400' : 'text-[#e5e5e5]'} min-w-[44px] min-h-[44px]`}
             onClick={() => navigate(contextBtn.path)}
             title={contextBtn.label}
           >

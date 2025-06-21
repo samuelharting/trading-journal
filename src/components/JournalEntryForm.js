@@ -55,6 +55,7 @@ const entryTypeOptions = [
   { value: 'trade', label: 'Trade' },
   { value: 'tape', label: 'Tape Reading' },
   { value: 'deposit', label: 'Deposit/Paycheck' },
+  { value: 'payout', label: 'Payout' },
 ];
 
 const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
@@ -110,8 +111,8 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
     }
     setForm((prev) => ({ ...prev, [name]: value }));
     if (name === "accountBalance") setAccountManuallyEdited(true);
-    if (name === "pnl" && !accountManuallyEdited && form.accountBalance !== "") {
-      const prevBalance = parseFloat(initialAccountBalance ?? form.accountBalance) || 0;
+    if (name === "pnl" && !accountManuallyEdited && entryType === 'trade' && initialAccountBalance) {
+      const prevBalance = parseFloat(initialAccountBalance) || 0;
       const pnl = parseFloat(value) || 0;
       setForm((prev) => ({ ...prev, accountBalance: (prevBalance + pnl).toFixed(2) }));
     }
@@ -170,13 +171,15 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
     setUploading(false);
     onSave({
       ...form,
-      pnl: entryType === 'trade' ? parseFloat(form.pnl) || 0 : 0,
+      pnl: entryType === 'trade' ? parseFloat(form.pnl) || 0 : 
+           entryType === 'payout' ? -(parseFloat(form.pnl) || 0) : 0,
       rr: entryType === 'trade' ? parseFloat(form.rr) || 0 : 0,
       accountBalance: parseFloat(form.accountBalance) || 0,
       screenshots: urls,
       created: new Date().toISOString(),
       tapeReading: entryType === 'tape',
       isDeposit: entryType === 'deposit',
+      isPayout: entryType === 'payout',
     });
     setForm(initialState);
     setScreenshots([]);
@@ -184,15 +187,15 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
 
   return (
     <form onSubmit={handleSubmit} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-95">
-      <motion.div initial="hidden" animate="visible" variants={{}} className="w-full h-full bg-black p-0 flex flex-col gap-10 overflow-y-auto border-none px-2 sm:px-8">
+      <motion.div initial="hidden" animate="visible" variants={{}} className="w-full h-full bg-black p-0 flex flex-col gap-6 sm:gap-10 overflow-y-auto border-none px-2 sm:px-8">
         {/* Entry Type Dropdown */}
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-          className="flex items-center gap-4 px-8 pt-2 pb-2">
-          <label className="text-lg font-semibold text-[#e5e5e5]">Entry Type</label>
+          className="flex items-center gap-4 px-4 sm:px-8 pt-2 pb-2">
+          <label className="text-base sm:text-lg font-semibold text-[#e5e5e5]">Entry Type</label>
           <select
             value={entryType}
             onChange={handleEntryTypeChange}
-            className="bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all"
+            className="bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-sm sm:text-base"
           >
             {entryTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
@@ -200,33 +203,49 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
         {/* Render fields based on entryType */}
         {entryType === 'deposit' ? (
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className="bg-blue-900/40 rounded-xl px-8 py-6 mb-2 shadow-md flex flex-col gap-8">
+            className="bg-blue-900/40 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md flex flex-col gap-6 sm:gap-8">
             <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
               <label className="text-xs font-semibold text-blue-300 mb-1">Account Balance After Deposit</label>
               <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all" />
             </div>
             <div className="flex flex-col gap-2 w-full">
-              <label className="text-xl font-extrabold text-blue-400 mb-1">Notes (optional)</label>
-              <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-2xl font-bold" />
+              <label className="text-lg sm:text-xl font-extrabold text-blue-400 mb-1">Notes (optional)</label>
+              <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-lg sm:text-2xl font-bold" />
+            </div>
+          </motion.div>
+        ) : entryType === 'payout' ? (
+          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+            className="bg-red-900/40 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md flex flex-col gap-6 sm:gap-8">
+            <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
+              <label className="text-xs font-semibold text-red-300 mb-1">Payout Amount</label>
+              <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-red-700 transition-all" placeholder="Enter payout amount" />
+            </div>
+            <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
+              <label className="text-xs font-semibold text-red-300 mb-1">Account Balance After Payout</label>
+              <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-red-700 transition-all" />
+            </div>
+            <div className="flex flex-col gap-2 w-full">
+              <label className="text-lg sm:text-xl font-extrabold text-red-400 mb-1">Notes (optional)</label>
+              <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-red-700 transition-all min-h-[120px] text-lg sm:text-2xl font-bold" />
             </div>
           </motion.div>
         ) : entryType === 'tape' ? (
           <>
             {/* Tape Reading: Only screenshots and notes */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className={`relative flex flex-col items-center justify-center px-8 pt-10 pb-6 rounded-2xl border-2 border-neutral-800 bg-neutral-900/80 shadow-lg mb-2`}
+              className={`relative flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-10 pb-4 sm:pb-6 rounded-2xl border-2 border-neutral-800 bg-neutral-900/80 shadow-lg mb-2`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
               <div className="flex flex-col items-center w-full">
-                <CameraIcon className="w-10 h-10 text-blue-400 mb-2" />
-                <div className="text-xl font-bold text-[#e5e5e5] mb-2">Upload Screenshots</div>
+                <CameraIcon className="w-8 h-8 sm:w-10 sm:h-10 text-blue-400 mb-2" />
+                <div className="text-lg sm:text-xl font-bold text-[#e5e5e5] mb-2">Upload Screenshots</div>
                 <div className="text-sm text-neutral-400 mb-4">Drag & drop images here, or</div>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current.click()}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-lg text-lg font-bold shadow-lg mb-4"
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-6 sm:px-8 py-2 sm:py-3 rounded-lg text-base sm:text-lg font-bold shadow-lg mb-4"
                 >
                   Select Images
                 </button>
@@ -239,10 +258,10 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                   className="hidden"
                 />
                 {screenshots.length > 0 && (
-                  <div className="flex flex-wrap gap-4 mt-4 w-full justify-center">
+                  <div className="flex flex-wrap gap-2 sm:gap-4 mt-4 w-full justify-center">
                     {screenshots.map((src, idx) => (
                       <div key={idx} className="relative group">
-                        <img src={src} alt="Screenshot" className="w-32 h-32 object-cover rounded-lg border-2 border-white/10 shadow-md" />
+                        <img src={src} alt="Screenshot" className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg border-2 border-white/10 shadow-md" />
                         <button type="button" onClick={() => handleRemoveScreenshot(idx)} className="absolute top-1 right-1 bg-black/70 text-[#e5e5e5] rounded-full px-2 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                       </div>
                     ))}
@@ -251,14 +270,14 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
               </div>
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-8 py-6 mb-2 shadow-md">
-              <div className="flex items-center gap-3 mb-6">
-                <DocumentTextIcon className="w-7 h-7 text-blue-300" />
-                <div className="text-2xl font-bold text-[#e5e5e5]">Notes</div>
+              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <DocumentTextIcon className="w-6 h-6 sm:w-7 sm:h-7 text-blue-300" />
+                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">Notes</div>
               </div>
               <div className="flex flex-col gap-2 w-full">
-                <label className="text-xl font-extrabold text-blue-400 mb-1">Notes</label>
-                <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-2xl font-bold" />
+                <label className="text-lg sm:text-xl font-extrabold text-blue-400 mb-1">Notes</label>
+                <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-lg sm:text-2xl font-bold" />
               </div>
             </motion.div>
           </>
@@ -266,19 +285,19 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
           <>
             {/* Screenshots Upload Section */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className={`relative flex flex-col items-center justify-center px-8 pt-10 pb-6 rounded-2xl border-2 ${dragActive ? 'border-green-400 bg-green-900/10' : 'border-neutral-800 bg-neutral-900/80'} shadow-lg mb-2`}
+              className={`relative flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-10 pb-4 sm:pb-6 rounded-2xl border-2 ${dragActive ? 'border-green-400 bg-green-900/10' : 'border-neutral-800 bg-neutral-900/80'} shadow-lg mb-2`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
               <div className="flex flex-col items-center w-full">
-                <CameraIcon className="w-10 h-10 text-blue-400 mb-2" />
-                <div className="text-xl font-bold text-[#e5e5e5] mb-2">Upload Screenshots</div>
+                <CameraIcon className="w-8 h-8 sm:w-10 sm:h-10 text-blue-400 mb-2" />
+                <div className="text-lg sm:text-xl font-bold text-[#e5e5e5] mb-2">Upload Screenshots</div>
                 <div className="text-sm text-neutral-400 mb-4">Drag & drop images here, or</div>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current.click()}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-lg text-lg font-bold shadow-lg mb-4"
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-6 sm:px-8 py-2 sm:py-3 rounded-lg text-base sm:text-lg font-bold shadow-lg mb-4"
                 >
                   Select Images
                 </button>
@@ -291,10 +310,10 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                   className="hidden"
                 />
                 {screenshots.length > 0 && (
-                  <div className="flex flex-wrap gap-4 mt-4 w-full justify-center">
+                  <div className="flex flex-wrap gap-2 sm:gap-4 mt-4 w-full justify-center">
                     {screenshots.map((src, idx) => (
                       <div key={idx} className="relative group">
-                        <img src={src} alt="Screenshot" className="w-32 h-32 object-cover rounded-lg border-2 border-white/10 shadow-md" />
+                        <img src={src} alt="Screenshot" className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg border-2 border-white/10 shadow-md" />
                         <button type="button" onClick={() => handleRemoveScreenshot(idx)} className="absolute top-1 right-1 bg-black/70 text-[#e5e5e5] rounded-full px-2 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                       </div>
                     ))}
@@ -304,49 +323,49 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
             </motion.div>
             {/* Trade Setup Section */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-8 py-6 mb-2 shadow-md">
-              <div className="flex items-center gap-3 mb-6">
-                <ChartBarIcon className="w-7 h-7 text-blue-400" />
-                <div className="text-2xl font-bold text-[#e5e5e5]">Trade Setup</div>
+              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <ChartBarIcon className="w-6 h-6 sm:w-7 sm:h-7 text-blue-400" />
+                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">Trade Setup</div>
               </div>
-              <div className="flex flex-wrap gap-8 w-full">
-                <div className="flex flex-col gap-4 flex-1 min-w-[220px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8 w-full">
+                <div className="flex flex-col gap-2 sm:gap-4 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">Ticker</label>
                   <select name="tickerTraded" value={form.tickerTraded} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" >
                     {tickerOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
-                <div className="flex flex-col gap-4 flex-1 min-w-[220px]">
+                <div className="flex flex-col gap-2 sm:gap-4 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">Grade</label>
                   <select name="grade" value={form.grade} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" >
                     {gradeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
-                <div className="flex flex-col gap-4 flex-1 min-w-[220px]">
+                <div className="flex flex-col gap-2 sm:gap-4 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">Session</label>
                   <select name="session" value={form.session} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" >
                     {sessionOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
-                <div className="flex flex-col gap-4 flex-1 min-w-[220px]">
+                <div className="flex flex-col gap-2 sm:gap-4 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">Liquidity Sweep</label>
                   <select name="liquiditySweep" value={form.liquiditySweep} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" >
                     {liquidityOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
-                <div className="flex flex-col gap-4 flex-1 min-w-[220px]">
+                <div className="flex flex-col gap-2 sm:gap-4 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">MACRO</label>
                   <select name="macro" value={form.macro} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" >
                     {macroOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
-                <div className="flex flex-col gap-4 flex-1 min-w-[220px]">
+                <div className="flex flex-col gap-2 sm:gap-4 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">OTE</label>
                   <select name="ote" value={form.ote} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" >
                     {oteOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
-                <div className="flex flex-col gap-4 flex-1 min-w-[220px]">
+                <div className="flex flex-col gap-2 sm:gap-4 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">Target</label>
                   <select name="target" value={form.target} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" >
                     {targetOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -356,12 +375,12 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
             </motion.div>
             {/* P&L & Risk/Reward Section */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-8 py-6 mb-2 shadow-md">
-              <div className="flex items-center gap-3 mb-6">
-                <CurrencyDollarIcon className="w-7 h-7 text-green-400" />
-                <div className="text-2xl font-bold text-[#e5e5e5]">P&L & Risk/Reward</div>
+              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <CurrencyDollarIcon className="w-6 h-6 sm:w-7 sm:h-7 text-green-400" />
+                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">P&L & Risk/Reward</div>
               </div>
-              <div className="flex flex-wrap gap-8 w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8 w-full">
                 <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">P&L</label>
                   <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-green-700 transition-all" placeholder="$" disabled={entryType !== 'trade'} />
@@ -382,12 +401,12 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
             </motion.div>
             {/* Trade Times Section */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-8 py-6 mb-2 shadow-md">
-              <div className="flex items-center gap-3 mb-6">
-                <ClockIcon className="w-7 h-7 text-yellow-400" />
-                <div className="text-2xl font-bold text-[#e5e5e5]">Trade Times</div>
+              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <ClockIcon className="w-6 h-6 sm:w-7 sm:h-7 text-yellow-400" />
+                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">Trade Times</div>
               </div>
-              <div className="flex flex-wrap gap-8 w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8 w-full">
                 <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
                   <label className="text-xs font-semibold text-neutral-400 mb-1">Entry Time</label>
                   <input name="entryTime" type="text" value={form.entryTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" />
@@ -400,40 +419,40 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
             </motion.div>
             {/* Emotional Review Section */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-8 py-6 mb-2 shadow-md">
-              <div className="flex items-center gap-3 mb-6">
-                <FaceSmileIcon className="w-7 h-7 text-pink-400" />
-                <div className="text-2xl font-bold text-[#e5e5e5]">Emotional Review</div>
+              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <FaceSmileIcon className="w-6 h-6 sm:w-7 sm:h-7 text-pink-400" />
+                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">Emotional Review</div>
               </div>
               <div className="flex flex-col gap-2 w-full">
-                <label className="text-lg font-bold text-pink-300 mb-1">Emotional Review</label>
-                <textarea name="howFeltBefore" value={form.howFeltBefore} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 rounded-lg border-none focus:ring-2 focus:ring-pink-700 transition-all min-h-[90px] text-lg" />
+                <label className="text-base sm:text-lg font-bold text-pink-300 mb-1">Emotional Review</label>
+                <textarea name="howFeltBefore" value={form.howFeltBefore} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 rounded-lg border-none focus:ring-2 focus:ring-pink-700 transition-all min-h-[90px] text-base sm:text-lg" />
               </div>
             </motion.div>
             {/* Premarket Analysis & Notes Section */}
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-8 py-6 mb-2 shadow-md">
-              <div className="flex items-center gap-3 mb-6">
-                <DocumentTextIcon className="w-7 h-7 text-blue-300" />
-                <div className="text-2xl font-bold text-[#e5e5e5]">Premarket Analysis & Notes</div>
+              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <DocumentTextIcon className="w-6 h-6 sm:w-7 sm:h-7 text-blue-300" />
+                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">Premarket Analysis & Notes</div>
               </div>
-              <div className="flex flex-col gap-8 w-full">
+              <div className="flex flex-col gap-6 sm:gap-8 w-full">
                 <div className="flex flex-col gap-2 w-full">
-                  <label className="text-lg font-bold text-blue-200 mb-1">Premarket Analysis</label>
-                  <textarea name="premarketAnalysis" value={form.premarketAnalysis} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 rounded-lg border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[60px] text-lg" />
+                  <label className="text-base sm:text-lg font-bold text-blue-200 mb-1">Premarket Analysis</label>
+                  <textarea name="premarketAnalysis" value={form.premarketAnalysis} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 rounded-lg border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[60px] text-base sm:text-lg" />
                 </div>
                 <div className="flex flex-col gap-2 w-full">
-                  <label className="text-xl font-extrabold text-blue-400 mb-1">Notes</label>
-                  <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-2xl font-bold" />
+                  <label className="text-lg sm:text-xl font-extrabold text-blue-400 mb-1">Notes</label>
+                  <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-lg sm:text-2xl font-bold" />
                 </div>
               </div>
             </motion.div>
           </>
         )}
         {/* Simple Save Button at the bottom */}
-        <div className="flex gap-6 mt-8 justify-end w-full px-8 pb-8">
-          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.98 }} type="submit" className="bg-green-600 hover:bg-green-500 text-white px-10 py-4 rounded-md text-xl font-bold transition-all border-none outline-none shadow-lg" disabled={uploading}>{uploading ? 'Uploading...' : 'Save'}</motion.button>
-          <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }} type="button" className="bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] px-10 py-4 rounded-md text-xl transition-all border-none outline-none shadow-none" onClick={onCancel} disabled={uploading}>Cancel</motion.button>
+        <div className="flex gap-4 sm:gap-6 mt-6 sm:mt-8 justify-end w-full px-4 sm:px-8 pb-4 sm:pb-8">
+          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.98 }} type="submit" className="bg-green-600 hover:bg-green-500 text-white px-6 sm:px-10 py-3 sm:py-4 rounded-md text-lg sm:text-xl font-bold transition-all border-none outline-none shadow-lg" disabled={uploading}>{uploading ? 'Uploading...' : 'Save'}</motion.button>
+          <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }} type="button" className="bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] px-6 sm:px-10 py-3 sm:py-4 rounded-md text-lg sm:text-xl transition-all border-none outline-none shadow-none" onClick={onCancel} disabled={uploading}>Cancel</motion.button>
         </div>
       </motion.div>
     </form>
