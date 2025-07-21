@@ -10,7 +10,7 @@ import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 
 const TradesPage = () => {
-  const { user } = useContext(UserContext);
+  const { user, currentUser, selectedAccount } = useContext(UserContext);
   const { setShowHeader } = useHeader();
   const [images, setImages] = useState([]);
   const [favorites, setFavorites] = useState({});
@@ -22,14 +22,16 @@ const TradesPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!user) return;
+    if (!currentUser || !selectedAccount) return;
     const fetchData = async () => {
-      // Fetch all entries
-      const entriesCol = collection(db, 'journalEntries', user, 'entries');
+      const { db } = await import('../firebase');
+      const { collection, getDocs, doc, getDoc, setDoc } = await import('firebase/firestore');
+      // Fetch all entries for selected account
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       const snap = await getDocs(entriesCol);
       const allEntries = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).sort((a, b) => new Date(b.created) - new Date(a.created));
       // Fetch favorites
-      const favDoc = await getDoc(doc(db, 'favorites', user));
+      const favDoc = await getDoc(doc(db, 'favorites', currentUser.uid + '_' + selectedAccount.id));
       setFavorites(favDoc.exists() ? favDoc.data().data : {});
       // Build images array with entry data
       const allImages = [];
@@ -45,10 +47,10 @@ const TradesPage = () => {
           });
         }
       });
-      setImages(allImages);
+      setImages(allImages.reverse());
     };
     fetchData();
-  }, [user]);
+  }, [currentUser, selectedAccount]);
 
   // Ensure header is shown when component unmounts
   useEffect(() => {
@@ -268,8 +270,8 @@ const TradesPage = () => {
                         {tradeEntry.pnl !== undefined && (
                           <div>
                             <span className="text-sm text-neutral-400">P&L:</span>
-                            <div className={`font-semibold ${tradeEntry.pnl > 0 ? 'text-green-400' : tradeEntry.pnl < 0 ? 'text-red-400' : 'text-[#e5e5e5]'}`}>
-                              {tradeEntry.pnl > 0 ? '+' : ''}{tradeEntry.pnl?.toFixed(2) || '0.00'}
+                            <div className={`font-semibold ${Number(tradeEntry.pnl) > 0 ? 'text-green-400' : Number(tradeEntry.pnl) < 0 ? 'text-red-400' : 'text-[#e5e5e5]'}`}>
+                              {Number(tradeEntry.pnl) > 0 ? '+' : ''}{tradeEntry.pnl !== undefined && tradeEntry.pnl !== null && tradeEntry.pnl !== '' ? Number(tradeEntry.pnl).toFixed(2) : '0.00'}
                             </div>
                           </div>
                         )}

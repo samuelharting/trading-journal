@@ -15,6 +15,11 @@ import GlitchTitle from '../components/GlitchTitle';
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, defs, linearGradient, stop } from 'recharts';
 
+function sumPrecise(arr) {
+  // Sums an array of numbers/strings as cents, returns float
+  return arr.reduce((sum, v) => sum + Math.round(Number(v) * 100), 0) / 100;
+}
+
 function getStats(entries) {
   if (!entries.length) return null;
   // Only include entries that are actual trades (not deposits, payouts, or tape reading)
@@ -27,13 +32,13 @@ function getStats(entries) {
     e.pnl !== "" && 
     Number(e.pnl) !== 0
   );
-  const totalPnl = tradeEntries.reduce((sum, e) => sum + (Number(e.pnl) || 0), 0);
+  const totalPnl = sumPrecise(tradeEntries.map(e => e.pnl));
   const avgPnl = tradeEntries.length ? totalPnl / tradeEntries.length : 0;
   const avgDuration = tradeEntries.length ? tradeEntries.reduce((sum, e) => sum + (parseFloat(e.duration) || 0), 0) / tradeEntries.length : 0;
   const wins = tradeEntries.filter(e => Number(e.pnl) > 0).length;
   const losses = tradeEntries.filter(e => Number(e.pnl) < 0).length;
   const winRate = tradeEntries.length ? (wins / tradeEntries.length) * 100 : 0;
-  const avgRr = tradeEntries.length ? tradeEntries.reduce((sum, e) => sum + (Number(e.rr) || 0), 0) / tradeEntries.length : 0;
+  const avgRr = tradeEntries.length ? sumPrecise(tradeEntries.map(e => e.rr)) / tradeEntries.length : 0;
   // Group by week/month for averages (all entries)
   const byWeek = {};
   const byMonth = {};
@@ -41,8 +46,8 @@ function getStats(entries) {
     const d = new Date(e.created);
     const week = `${d.getFullYear()}-W${getWeekNumber(d)}`;
     const month = `${d.getFullYear()}-${d.getMonth() + 1}`;
-    byWeek[week] = (byWeek[week] || 0) + (Number(e.pnl) || 0);
-    byMonth[month] = (byMonth[month] || 0) + (Number(e.pnl) || 0);
+    byWeek[week] = (byWeek[week] || 0) + Math.round(Number(e.pnl) * 100) / 100;
+    byMonth[month] = (byMonth[month] || 0) + Math.round(Number(e.pnl) * 100) / 100;
   });
   const avgWeekly = Object.values(byWeek).reduce((a, b) => a + b, 0) / Object.keys(byWeek).length;
   const avgMonthly = Object.values(byMonth).reduce((a, b) => a + b, 0) / Object.keys(byMonth).length;
@@ -74,12 +79,12 @@ function getEquityCurve(entries) {
     let pnl = 0;
     if (e.isDeposit) {
       // For deposits, use the account balance field directly
-      pnl = (Number(e.accountBalance) || 0) - last;
+      pnl = Number(e.accountBalance) - last;
     } else {
       // For trades, payouts, and tape reading, use the P&L
       pnl = Number(e.pnl) || 0;
     }
-    last = Math.round((last + pnl) * 100) / 100; // round to 2 decimals after each addition
+    last = (Math.round((last + pnl) * 100) / 100);
     curve.push(last);
     points.push({ x: i, y: last });
   });
@@ -238,7 +243,7 @@ function getWeeklyPnlsForMonth(entries, year, month) {
 }
 
 const SummaryPage = () => {
-  const { currentUser } = useContext(UserContext);
+  const { currentUser, selectedAccount } = useContext(UserContext);
   const [stats, setStats] = useState(null);
   const [curveData, setCurveData] = useState({ curve: [], points: [] });
   const [streaks, setStreaks] = useState({});
@@ -248,10 +253,12 @@ const SummaryPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !selectedAccount) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
+      const { db } = await import('../firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       const snap = await getDocs(entriesCol);
       const data = snap.docs.map(doc => doc.data());
       setEntries(data);
@@ -262,7 +269,7 @@ const SummaryPage = () => {
       setLoading(false);
     };
     fetchEntries();
-  }, [currentUser]);
+  }, [currentUser, selectedAccount]);
 
   useEffect(() => {
     console.log('SummaryPage user:', currentUser, 'entries:', entries, 'loading:', loading);
@@ -368,18 +375,30 @@ const SummaryPage = () => {
   const mostRecentMonthPnl = mostRecentMonthKey ? stats.byMonth[mostRecentMonthKey] : 0;
 
   const handleReset = async () => {
-    if (!window.confirm('Are you sure you want to reset your account? This will delete ALL your journal entries and cannot be undone.')) return;
-    if (!currentUser) return;
-    const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
+    if (!window.confirm('Are you sure you want to reset your account? This will delete ALL your journal entries, screenshots, and cannot be undone.')) return;
+    if (!currentUser || !selectedAccount) return;
+    // Delete all entries for this account
+    const { db, storage } = await import('../firebase');
+    const { collection, getDocs, deleteDoc, doc } = await import('firebase/firestore');
+    const { ref, listAll, deleteObject } = await import('firebase/storage');
+    const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
     const snap = await getDocs(entriesCol);
-    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'journalEntries', currentUser.uid, 'entries', docSnap.id))));
+    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries', docSnap.id))));
+    // Delete all screenshots for this account
+    const screenshotsRef = ref(storage, `screenshots/${currentUser.uid}/${selectedAccount.id}`);
+    try {
+      const list = await listAll(screenshotsRef);
+      await Promise.all(list.items.map(itemRef => deleteObject(itemRef)));
+    } catch (err) {
+      // It's ok if there are no screenshots
+      if (err.code !== 'storage/object-not-found') {
+        console.error('Error deleting screenshots:', err);
+      }
+    }
     window.location.reload();
   };
 
-  const handleEdit = () => {
-    // Navigate to a new edit page or open a modal
-    navigate('/edit-account');
-  };
+  // Remove any button or link that navigates to or shows 'Edit Account' on the summary page.
 
   const totalPayouts = entries.filter(e => e.isPayout).length;
 
@@ -387,7 +406,6 @@ const SummaryPage = () => {
     <div className="w-full min-h-screen bg-black pt-20 px-4 sm:px-8">
       <div className="flex justify-between items-center mb-2">
         <button onClick={handleReset} className="bg-red-700 hover:bg-red-600 text-white px-4 py-2 rounded text-sm font-bold shadow ml-4">Reset Account</button>
-        <button onClick={handleEdit} className="bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold shadow ml-4">Edit Account</button>
       </div>
       
       {loading ? (

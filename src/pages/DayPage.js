@@ -26,7 +26,6 @@ function trimFirestoreDoc(doc) {
     } else if (typeof obj === 'object' && obj !== null) {
       const out = {};
       for (const k in obj) {
-        if (k === 'screenshots' && Array.isArray(obj[k])) continue;
         const trimmed = trim(obj[k]);
         if (trimmed !== undefined) out[k] = trimmed;
       }
@@ -43,7 +42,7 @@ function trimFirestoreDoc(doc) {
 }
 
 const DayPage = () => {
-  const { currentUser } = useContext(UserContext);
+  const { currentUser, selectedAccount } = useContext(UserContext);
   const { month, day } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -53,10 +52,12 @@ const DayPage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentUser || !month || !day) return;
+    if (!currentUser || !selectedAccount || !month || !day) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
+      const { db } = await import('../firebase');
+      const { collection, query, where, getDocs, orderBy } = await import('firebase/firestore');
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       const q = query(entriesCol, where('month', '==', month), where('day', '==', day), orderBy('created', 'asc'));
       const snap = await getDocs(q);
       const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
@@ -64,7 +65,7 @@ const DayPage = () => {
       setLoading(false);
     };
     fetchEntries();
-  }, [currentUser, month, day]);
+  }, [currentUser, selectedAccount, month, day]);
 
   useEffect(() => {
     console.log('DayPage user:', currentUser, 'entries:', entries, 'loading:', loading);
@@ -79,19 +80,30 @@ const DayPage = () => {
   let initialAccountBalance = "";
   if (entries.length > 0) {
     const last = entries[entries.length - 1];
-    const prevBalance = parseFloat(last.accountBalance) || 0;
-    const prevPnl = parseFloat(last.pnl) || 0;
-    initialAccountBalance = (prevBalance + prevPnl).toFixed(2);
+    const prevBalance = Number(last.accountBalance) || 0;
+    const prevPnl = Number(last.pnl) || 0;
+    const sum = (Math.round(prevBalance * 100) + Math.round(prevPnl * 100)) / 100;
+    initialAccountBalance = sum.toFixed(2);
   }
 
   const handleAddEntry = async (entry) => {
-    if (!currentUser) return;
-    const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
-    const trimmedEntry = trimFirestoreDoc(entry);
+    if (!currentUser || !selectedAccount) return;
+    const { db } = await import('../firebase');
+    const { collection, addDoc, getDocs, query, where, orderBy } = await import('firebase/firestore');
+    const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
+    // Ensure year, month, day fields are set
+    const now = new Date();
+    const entryYear = entry.year || String(now.getFullYear());
+    const entryMonth = entry.month || String(now.getMonth() + 1);
+    const entryDay = entry.day || String(now.getDate());
+    const trimmedEntry = trimFirestoreDoc({ ...entry, year: entryYear, month: entryMonth, day: entryDay });
     if (trimmedEntry) {
       await addDoc(entriesCol, trimmedEntry);
-      setEntries(prev => [...prev, { ...trimmedEntry, year: String(year), month: String(month), day: String(day) }]);
-      setShowForm(false);
+      // Refetch entries from Firestore
+      const q = query(entriesCol, where('month', '==', month), where('day', '==', day), orderBy('created', 'asc'));
+      const snap = await getDocs(q);
+      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      setEntries(data);
     } else {
       console.warn("Entry trimmed to undefined, not saving.");
     }
@@ -133,7 +145,7 @@ const DayPage = () => {
       </div>
       {loading ? <div className="flex justify-center items-center py-24"><Spinner size={48} /></div> : <JournalEntryList entries={entries} />}
       {showForm && (
-        <JournalEntryForm onSave={handleAddEntry} onCancel={() => setShowForm(false)} initialAccountBalance={initialAccountBalance} />
+        <JournalEntryForm onSave={() => setShowForm(false)} onCancel={() => setShowForm(false)} initialAccountBalance={initialAccountBalance} />
       )}
     </div>
   );

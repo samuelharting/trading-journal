@@ -15,29 +15,30 @@ const months = [
 ];
 
 const HomePage = () => {
-  const { currentUser } = useContext(UserContext);
+  const { currentUser, selectedAccount } = useContext(UserContext);
   const navigate = useNavigate();
-  // Year dropdown logic: always start at 2025, go up to max(current year + 1, selected year, 2026)
+  // Year dropdown logic: always start at 2025, go up to 2035
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
-  const maxYear = Math.max(currentYear + 1, year, 2026); // always show at least 2026 and next year
   const yearOptions = [];
-  for (let y = 2025; y <= maxYear; y++) yearOptions.push(y);
+  for (let y = 2025; y <= 2035; y++) yearOptions.push(y);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !selectedAccount) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
+      const { db } = await import('../firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       const snap = await getDocs(entriesCol);
       const data = snap.docs.map(doc => doc.data());
       setEntries(data);
       setLoading(false);
     };
     fetchEntries();
-  }, [currentUser]);
+  }, [currentUser, selectedAccount]);
 
   useEffect(() => {
     console.log('HomePage user:', currentUser, 'entries:', entries, 'loading:', loading);
@@ -51,7 +52,6 @@ const HomePage = () => {
         const idx = parseInt(entry.month, 10) - 1;
         if (idx >= 0 && idx < 12) {
           data[idx].pnl += Number(entry.pnl) || 0;
-          
           // Only count actual trades (not deposits, payouts, or tape reading)
           const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined;
           if (isActualTrade) {
@@ -61,7 +61,7 @@ const HomePage = () => {
       }
     });
     return data;
-  }, [entries, year]);
+  }, [entries, year, selectedAccount]);
 
   return (
     <div className="w-full min-h-screen bg-black pt-20 px-8">

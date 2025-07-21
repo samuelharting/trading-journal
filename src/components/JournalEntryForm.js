@@ -121,6 +121,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
   const [screenshots, setScreenshots] = useState([]);
   const [accountManuallyEdited, setAccountManuallyEdited] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [entryType, setEntryType] = useState('trade');
   const fileInputRef = useRef();
   const [dragActive, setDragActive] = useState(false);
@@ -128,9 +129,9 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
   // Add new state for all toggles and POI
   const [sessionContext, setSessionContext] = useState({
     dailyHighLowTaken: false,
-    aboveBelow0000: '',
-    aboveBelow0830: '',
-    aboveBelow0930: '',
+    aboveBelow0000: false, // false = below, true = above
+    aboveBelow0830: false,
+    aboveBelow0930: false,
     macroRange: false,
   });
   const [tradeEnv, setTradeEnv] = useState({
@@ -191,11 +192,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
     }
     setForm((prev) => ({ ...prev, [name]: value }));
     if (name === "accountBalance") setAccountManuallyEdited(true);
-    if (name === "pnl" && !accountManuallyEdited && entryType === 'trade' && initialAccountBalance) {
-      const prevBalance = parseFloat(initialAccountBalance) || 0;
-      const pnl = parseFloat(value) || 0;
-      setForm((prev) => ({ ...prev, accountBalance: (prevBalance + pnl).toFixed(2) }));
-    }
+    // Remove any logic that auto-updates accountBalance based on PnL input
   };
 
   // Drag and drop handlers
@@ -238,7 +235,9 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (uploading || submitting) return;
     setUploading(true);
+    setSubmitting(true);
     let urls = [];
     if (currentUser && selectedAccount) {
       try {
@@ -255,27 +254,43 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
       }
     }
     setUploading(false);
+    const now = new Date();
+    const entryYear = String(now.getFullYear());
+    const entryMonth = String(now.getMonth() + 1);
+    const entryDay = String(now.getDate());
+    const createdTimestamp = now.toISOString() + '-' + Math.random().toString(36).slice(2, 8);
     const trimmedEntry = trimFirestoreDoc({
       ...form,
-      pnl: entryType === 'trade' ? parseFloat(form.pnl) || 0 : 
-           entryType === 'payout' ? -(parseFloat(form.pnl) || 0) : 0,
-      rr: entryType === 'trade' ? parseFloat(form.rr) || 0 : 0,
-      accountBalance: parseFloat(form.accountBalance) || 0,
+      ...sessionContext,
+      ...tradeEnv,
+      poi,
+      economicRelease,
+      dayOfWeek,
+      pnl: entryType === 'trade' ? form.pnl : entryType === 'payout' ? '-' + form.pnl : '0',
+      rr: entryType === 'trade' ? form.rr : '0',
+      accountBalance: form.accountBalance,
       screenshots: urls,
-      created: new Date().toISOString(),
+      created: createdTimestamp,
       tapeReading: entryType === 'tape',
       isDeposit: entryType === 'deposit',
       isPayout: entryType === 'payout',
+      year: entryYear,
+      month: entryMonth,
+      day: entryDay,
+      aboveBelow0000: sessionContext.aboveBelow0000 ? 'above' : 'below',
+      aboveBelow0830: sessionContext.aboveBelow0830 ? 'above' : 'below',
+      aboveBelow0930: sessionContext.aboveBelow0930 ? 'above' : 'below',
     });
     if (trimmedEntry && currentUser && selectedAccount) {
       const { db } = await import('../firebase');
       const { collection, addDoc } = await import('firebase/firestore');
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       await addDoc(entriesCol, trimmedEntry);
-      onSave(trimmedEntry);
+      onSave();
       setForm(initialState);
       setScreenshots([]);
     }
+    setSubmitting(false);
   };
 
   return (
@@ -369,7 +384,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                 <span className="text-lg font-bold text-blue-300">Session Context</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Toggle value={sessionContext.dailyHighLowTaken} onChange={v => setSessionContext(sc => ({ ...sc, dailyHighLowTaken: v }))} label="Was a daily high or low taken before the trade?" tooltip="Did price take out a daily high or low before your entry?" />
+                <Toggle value={sessionContext.dailyHighLowTaken} onChange={v => setSessionContext(sc => ({ ...sc, dailyHighLowTaken: v }))} label="Daily high/low taken before trade?" tooltip="Did price take out a daily high or low before your entry?" />
                 <div>
                   <label className="text-blue-300 text-sm font-semibold flex items-center">Economic Release and Time <Tooltip text="E.g. CPI 8:30, FOMC 14:00, NFP, etc." /></label>
                   <input
@@ -395,31 +410,25 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                     <option value="Friday">Friday</option>
                   </select>
                 </div>
-                <div>
-                  <label className="text-blue-300 text-sm font-semibold flex items-center">Was price above or below the 00:00 open? <Tooltip text="Relative to the midnight open price." /></label>
-                  <select className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md mt-1" value={sessionContext.aboveBelow0000} onChange={e => setSessionContext(sc => ({ ...sc, aboveBelow0000: e.target.value }))}>
-                    <option value="">Select</option>
-                    <option value="above">Above</option>
-                    <option value="below">Below</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-blue-300 text-sm font-semibold flex items-center">Was price above or below the 8:30 open? <Tooltip text="Relative to the 8:30am open price." /></label>
-                  <select className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md mt-1" value={sessionContext.aboveBelow0830} onChange={e => setSessionContext(sc => ({ ...sc, aboveBelow0830: e.target.value }))}>
-                    <option value="">Select</option>
-                    <option value="above">Above</option>
-                    <option value="below">Below</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-blue-300 text-sm font-semibold flex items-center">Was price above or below the 9:30 open? <Tooltip text="Relative to the 9:30am open price." /></label>
-                  <select className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md mt-1" value={sessionContext.aboveBelow0930} onChange={e => setSessionContext(sc => ({ ...sc, aboveBelow0930: e.target.value }))}>
-                    <option value="">Select</option>
-                    <option value="above">Above</option>
-                    <option value="below">Below</option>
-                  </select>
-                </div>
-                <Toggle value={sessionContext.macroRange} onChange={v => setSessionContext(sc => ({ ...sc, macroRange: v }))} label="Was price in a macro range?" tooltip="Was price consolidating in a higher timeframe range?" />
+                <Toggle
+                  value={sessionContext.aboveBelow0000}
+                  onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0000: v }))}
+                  label="Above 00:00 open?"
+                  tooltip="ON = Above, OFF = Below (Relative to the midnight open price.)"
+                />
+                <Toggle
+                  value={sessionContext.aboveBelow0830}
+                  onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0830: v }))}
+                  label="Above 8:30 open?"
+                  tooltip="ON = Above, OFF = Below (Relative to the 8:30am open price.)"
+                />
+                <Toggle
+                  value={sessionContext.aboveBelow0930}
+                  onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0930: v }))}
+                  label="Above 9:30 open?"
+                  tooltip="ON = Above, OFF = Below (Relative to the 9:30am open price.)"
+                />
+                <Toggle value={sessionContext.macroRange} onChange={v => setSessionContext(sc => ({ ...sc, macroRange: v }))} label="Macro range?" tooltip="Was price consolidating in a higher timeframe range?" />
               </div>
             </motion.div>
             <motion.div className="bg-neutral-900/80 rounded-2xl p-6 mb-4 border border-white/10 shadow-md">
@@ -427,10 +436,10 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                 <span className="text-lg font-bold text-blue-300">Trade Environment</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Toggle value={tradeEnv.judasSwing} onChange={v => setTradeEnv(te => ({ ...te, judasSwing: v }))} label="Was there a 9:30 Judas swing?" tooltip="Did price make a false move after the 9:30 open?" />
-                <Toggle value={tradeEnv.silverBullet} onChange={v => setTradeEnv(te => ({ ...te, silverBullet: v }))} label="Was there a Silver Bullet?" tooltip="Was there a clear Silver Bullet setup?" />
-                <Toggle value={tradeEnv.manipulation} onChange={v => setTradeEnv(te => ({ ...te, manipulation: v }))} label="Was there clear manipulation in the opposite direction?" tooltip="Did price move against your bias before your entry?" />
-                <Toggle value={tradeEnv.smt} onChange={v => setTradeEnv(te => ({ ...te, smt: v }))} label="Was there SMT?" tooltip="Did you observe Smart Money Technique (SMT) divergence?" />
+                <Toggle value={tradeEnv.judasSwing} onChange={v => setTradeEnv(te => ({ ...te, judasSwing: v }))} label="9:30 Judas swing?" tooltip="Did price make a false move after the 9:30 open?" />
+                <Toggle value={tradeEnv.silverBullet} onChange={v => setTradeEnv(te => ({ ...te, silverBullet: v }))} label="Silver Bullet?" tooltip="Was there a clear Silver Bullet setup?" />
+                <Toggle value={tradeEnv.manipulation} onChange={v => setTradeEnv(te => ({ ...te, manipulation: v }))} label="Clear manipulation in opposite direction?" tooltip="Did price move against your bias before your entry?" />
+                <Toggle value={tradeEnv.smt} onChange={v => setTradeEnv(te => ({ ...te, smt: v }))} label="SMT?" tooltip="Did you observe Smart Money Technique (SMT) divergence?" />
               </div>
             </motion.div>
             <motion.div className="bg-neutral-900/80 rounded-2xl p-6 mb-4 border border-white/10 shadow-md">
@@ -516,7 +525,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
         )}
         {/* Simple Save Button at the bottom */}
         <div className="flex gap-4 sm:gap-6 mt-6 sm:mt-8 justify-end w-full px-4 sm:px-8 pb-4 sm:pb-8">
-          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.98 }} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-xl text-2xl font-extrabold shadow-lg border-none outline-none mt-4" disabled={uploading}>{uploading ? 'Uploading...' : 'Save'}</motion.button>
+          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.98 }} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-xl text-2xl font-extrabold shadow-lg border-none outline-none mt-4" disabled={uploading || submitting}>{uploading ? 'Uploading...' : submitting ? 'Saving...' : 'Save'}</motion.button>
           <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }} type="button" className="bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] px-6 sm:px-10 py-3 sm:py-4 rounded-md text-lg sm:text-xl transition-all border-none outline-none shadow-none" onClick={onCancel} disabled={uploading}>Cancel</motion.button>
         </div>
       </motion.div>

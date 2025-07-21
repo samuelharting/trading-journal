@@ -12,7 +12,7 @@ import { CalendarIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const MonthPage = () => {
-  const { currentUser } = useContext(UserContext);
+  const { currentUser, selectedAccount } = useContext(UserContext);
   const { year, month } = useParams();
   const navigate = useNavigate();
   const monthIndex = parseInt(month, 10) - 1;
@@ -22,17 +22,19 @@ const MonthPage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !selectedAccount) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
+      const { db } = await import('../firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       const snap = await getDocs(entriesCol);
       const data = snap.docs.map(doc => doc.data());
       setEntries(data);
       setLoading(false);
     };
     fetchEntries();
-  }, [currentUser]);
+  }, [currentUser, selectedAccount, year, month]);
 
   useEffect(() => {
     console.log('MonthPage user:', currentUser, 'entries:', entries, 'loading:', loading);
@@ -55,7 +57,7 @@ const MonthPage = () => {
       }
     });
     return data;
-  }, [entries, year, month, daysInMonth]);
+  }, [entries, year, month, daysInMonth, selectedAccount]);
 
   const calendarGrid = useMemo(() => {
     const firstDay = new Date(year, month - 1, 1).getDay();
@@ -70,7 +72,7 @@ const MonthPage = () => {
     }
     if (week.length) grid.push(week);
     return grid;
-  }, [year, month, daysInMonth]);
+  }, [year, month, daysInMonth, selectedAccount]);
 
   // Helper to compute weekly PnL and trade counts for the month
   function getWeeklyPnls(entries, year, month, calendarGrid) {
