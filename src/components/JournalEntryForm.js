@@ -100,7 +100,6 @@ function trimFirestoreDoc(doc) {
     } else if (typeof obj === 'object' && obj !== null) {
       const out = {};
       for (const k in obj) {
-        if (k === 'screenshots' && Array.isArray(obj[k])) continue;
         const trimmed = trim(obj[k]);
         if (trimmed !== undefined) out[k] = trimmed;
       }
@@ -117,7 +116,7 @@ function trimFirestoreDoc(doc) {
 }
 
 const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
-  const { currentUser } = useContext(UserContext);
+  const { currentUser, selectedAccount } = useContext(UserContext);
   const [form, setForm] = useState({ ...initialState, accountBalance: initialAccountBalance ?? "" });
   const [screenshots, setScreenshots] = useState([]);
   const [accountManuallyEdited, setAccountManuallyEdited] = useState(false);
@@ -241,12 +240,12 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
     e.preventDefault();
     setUploading(true);
     let urls = [];
-    if (currentUser) {
+    if (currentUser && selectedAccount) {
       try {
         urls = await Promise.all(
           screenshots.map(async (src, idx) => {
             if (src.startsWith('http')) return src;
-            const imageRef = ref(storage, `screenshots/${currentUser.uid}/${Date.now()}-${idx}.jpg`);
+            const imageRef = ref(storage, `screenshots/${currentUser.uid}/${selectedAccount.id}/${Date.now()}-${idx}.jpg`);
             await uploadString(imageRef, src, 'data_url');
             return await getDownloadURL(imageRef);
           })
@@ -268,7 +267,11 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
       isDeposit: entryType === 'deposit',
       isPayout: entryType === 'payout',
     });
-    if (trimmedEntry) {
+    if (trimmedEntry && currentUser && selectedAccount) {
+      const { db } = await import('../firebase');
+      const { collection, addDoc } = await import('firebase/firestore');
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
+      await addDoc(entriesCol, trimmedEntry);
       onSave(trimmedEntry);
       setForm(initialState);
       setScreenshots([]);
@@ -291,6 +294,45 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
           </select>
         </motion.div>
         {/* Render fields based on entryType */}
+        {(entryType === 'trade' || entryType === 'tape') && (
+          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+            className={`relative flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-10 pb-4 sm:pb-6 rounded-2xl border-2 border-neutral-800 bg-neutral-900/80 shadow-lg mb-2`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="flex flex-col items-center w-full">
+              <CameraIcon className="w-8 h-8 sm:w-10 sm:h-10 text-blue-400 mb-2" />
+              <div className="text-lg sm:text-xl font-bold text-[#e5e5e5] mb-2">Upload Screenshots</div>
+              <div className="text-sm text-neutral-400 mb-4">Drag & drop images here, or</div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current.click()}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-6 sm:px-8 py-2 sm:py-3 rounded-lg text-base sm:text-lg font-bold shadow-lg mb-4"
+              >
+                Select Images
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              {screenshots.length > 0 && (
+                <div className="flex flex-wrap gap-2 sm:gap-4 mt-4 w-full justify-center">
+                  {screenshots.map((src, idx) => (
+                    <div key={idx} className="relative group">
+                      <img src={src} alt="Screenshot" className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg border-2 border-white/10 shadow-md" />
+                      <button type="button" onClick={() => handleRemoveScreenshot(idx)} className="absolute top-1 right-1 bg-black/70 text-[#e5e5e5] rounded-full px-2 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
         {entryType === 'deposit' ? (
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
             className="bg-blue-900/40 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md flex flex-col gap-6 sm:gap-8">
@@ -318,58 +360,6 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
               </div>
             </div>
           </motion.div>
-        ) : entryType === 'tape' ? (
-          // Restore original Tape Reading layout
-          <>
-            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className={`relative flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-10 pb-4 sm:pb-6 rounded-2xl border-2 border-neutral-800 bg-neutral-900/80 shadow-lg mb-2`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <div className="flex flex-col items-center w-full">
-                <CameraIcon className="w-8 h-8 sm:w-10 sm:h-10 text-blue-400 mb-2" />
-                <div className="text-lg sm:text-xl font-bold text-[#e5e5e5] mb-2">Upload Screenshots</div>
-                <div className="text-sm text-neutral-400 mb-4">Drag & drop images here, or</div>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current.click()}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-6 sm:px-8 py-2 sm:py-3 rounded-lg text-base sm:text-lg font-bold shadow-lg mb-4"
-                >
-                  Select Images
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                {screenshots.length > 0 && (
-                  <div className="flex flex-wrap gap-2 sm:gap-4 mt-4 w-full justify-center">
-                    {screenshots.map((src, idx) => (
-                      <div key={idx} className="relative group">
-                        <img src={src} alt="Screenshot" className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg border-2 border-white/10 shadow-md" />
-                        <button type="button" onClick={() => handleRemoveScreenshot(idx)} className="absolute top-1 right-1 bg-black/70 text-[#e5e5e5] rounded-full px-2 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
-              <div className="flex items-center gap-3 mb-4 sm:mb-6">
-                <DocumentTextIcon className="w-6 h-6 sm:w-7 sm:h-7 text-blue-300" />
-                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">Notes</div>
-              </div>
-              <div className="flex flex-col gap-2 w-full">
-                <label className="text-lg sm:text-xl font-extrabold text-blue-400 mb-1">Notes</label>
-                <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-lg sm:text-2xl font-bold" />
-              </div>
-            </motion.div>
-          </>
         ) : (
           // Modern grouped trade form
           <>
