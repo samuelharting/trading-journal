@@ -17,7 +17,7 @@ const RobotIcon = () => (
 );
 
 const NavBar = () => {
-  const { user } = useContext(UserContext);
+  const { accounts, selectedAccount, setSelectedAccount, setAccounts, currentUser } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
   const [showReset, setShowReset] = useState(false);
@@ -69,6 +69,39 @@ const NavBar = () => {
 
   return (
     <nav className="fixed top-0 left-0 w-full z-40 bg-black flex items-center h-16 px-2 sm:px-4">
+      {/* Account Dropdown - top left */}
+      <div className="flex items-center gap-2">
+        {accounts && accounts.length > 0 && (
+          <select
+            value={selectedAccount ? selectedAccount.id : ''}
+            onChange={e => {
+              const acc = accounts.find(a => a.id === e.target.value);
+              if (acc) setSelectedAccount(acc);
+            }}
+            className="bg-neutral-900 text-blue-300 font-bold px-3 py-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 text-sm mr-2"
+            style={{ minWidth: 120 }}
+          >
+            {accounts.map(acc => (
+              <option key={acc.id} value={acc.id}>{acc.name || 'Account'}</option>
+            ))}
+          </select>
+        )}
+        <button
+          className="bg-blue-700 hover:bg-blue-600 text-white font-bold px-2 py-1 rounded-md text-xs"
+          onClick={async () => {
+            // Simple prompt for now
+            const name = window.prompt('Enter new account name:');
+            if (!name || !currentUser) return;
+            const { db } = await import('../firebase');
+            const { collection, addDoc } = await import('firebase/firestore');
+            const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
+            const docRef = await addDoc(accountsCol, { name, created: new Date().toISOString() });
+            setAccounts(prev => [...prev, { id: docRef.id, name, created: new Date().toISOString() }]);
+            setSelectedAccount({ id: docRef.id, name, created: new Date().toISOString() });
+          }}
+          title="Add Account"
+        >+ Account</button>
+      </div>
       <div className="flex gap-2 sm:gap-6 w-full justify-center items-center relative">
         {navButtonsWithQuickAdd.map((btn, idx) => (
           <motion.button

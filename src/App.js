@@ -18,6 +18,8 @@ export const UserContext = createContext();
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -27,14 +29,31 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // Fetch accounts for the current user
   useEffect(() => {
-    console.log('App.js currentUser:', currentUser, 'authReady:', authReady);
-  }, [currentUser, authReady]);
+    if (!currentUser) return;
+    async function fetchAccounts() {
+      const { db } = await import('./firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
+      const snap = await getDocs(accountsCol);
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAccounts(data);
+      if (data.length > 0 && !selectedAccount) {
+        setSelectedAccount(data[0]);
+      }
+    }
+    fetchAccounts();
+  }, [currentUser]);
+
+  useEffect(() => {
+    console.log('App.js currentUser:', currentUser, 'authReady:', authReady, 'accounts:', accounts, 'selectedAccount:', selectedAccount);
+  }, [currentUser, authReady, accounts, selectedAccount]);
 
   if (!authReady) return null;
 
   return (
-    <UserContext.Provider value={{ currentUser }}>
+    <UserContext.Provider value={{ currentUser, accounts, selectedAccount, setSelectedAccount, setAccounts }}>
       <Router>
         {currentUser ? (
           <Layout>
