@@ -56,10 +56,10 @@ const NavBar = () => {
 
   const handleReset = async () => {
     setResetting(true);
-    if (!user) return;
-    const entriesCol = collection(db, 'journalEntries', user, 'entries');
+    if (!currentUser) return;
+    const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
     const snap = await getDocs(entriesCol);
-    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'journalEntries', user, 'entries', docSnap.id))));
+    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'journalEntries', currentUser.uid, 'entries', docSnap.id))));
     setResetting(false);
     setShowReset(false);
     window.location.reload();
