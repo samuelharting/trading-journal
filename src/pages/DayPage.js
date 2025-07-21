@@ -9,8 +9,41 @@ import Spinner from '../components/MatrixLoader';
 import GlitchTitle from '../components/GlitchTitle';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 
+function trimFirestoreDoc(doc) {
+  const MAX_STRING = 1000000;
+  const MAX_ARRAY = 1000;
+  const MAX_FIELD_BYTES = 1048487;
+  function trim(obj) {
+    if (Array.isArray(obj)) {
+      let arr = obj.slice(0, MAX_ARRAY);
+      arr = arr.map(trim);
+      if (JSON.stringify(arr).length > MAX_FIELD_BYTES) return undefined;
+      return arr;
+    } else if (typeof obj === 'string') {
+      let s = obj.slice(0, MAX_STRING);
+      if (s.length > MAX_FIELD_BYTES) return undefined;
+      return s;
+    } else if (typeof obj === 'object' && obj !== null) {
+      const out = {};
+      for (const k in obj) {
+        if (k === 'screenshots' && Array.isArray(obj[k])) continue;
+        const trimmed = trim(obj[k]);
+        if (trimmed !== undefined) out[k] = trimmed;
+      }
+      if (JSON.stringify(out).length > MAX_FIELD_BYTES) return undefined;
+      return out;
+    } else {
+      return obj;
+    }
+  }
+  const trimmed = trim(doc);
+  const size = JSON.stringify(trimmed).length;
+  console.log('Firestore doc size:', size);
+  return trimmed;
+}
+
 const DayPage = () => {
-  const { user } = useContext(UserContext);
+  const { currentUser } = useContext(UserContext);
   const { month, day } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -20,10 +53,10 @@ const DayPage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !month || !day) return;
+    if (!currentUser || !month || !day) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', user, 'entries');
+      const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
       const q = query(entriesCol, where('month', '==', month), where('day', '==', day), orderBy('created', 'asc'));
       const snap = await getDocs(q);
       const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
@@ -31,7 +64,11 @@ const DayPage = () => {
       setLoading(false);
     };
     fetchEntries();
-  }, [user, month, day]);
+  }, [currentUser, month, day]);
+
+  useEffect(() => {
+    console.log('DayPage user:', currentUser, 'entries:', entries, 'loading:', loading);
+  }, [currentUser, entries, loading]);
 
   if (!month || !day) {
     console.warn("DayPage: missing month or day param", { month, day });
@@ -48,11 +85,16 @@ const DayPage = () => {
   }
 
   const handleAddEntry = async (entry) => {
-    if (!user) return;
-    const entriesCol = collection(db, 'journalEntries', user, 'entries');
-    await addDoc(entriesCol, { ...entry, year: String(year), month: String(month), day: String(day) });
-    setEntries(prev => [...prev, { ...entry, year: String(year), month: String(month), day: String(day) }]);
-    setShowForm(false);
+    if (!currentUser) return;
+    const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
+    const trimmedEntry = trimFirestoreDoc(entry);
+    if (trimmedEntry) {
+      await addDoc(entriesCol, trimmedEntry);
+      setEntries(prev => [...prev, { ...trimmedEntry, year: String(year), month: String(month), day: String(day) }]);
+      setShowForm(false);
+    } else {
+      console.warn("Entry trimmed to undefined, not saving.");
+    }
   };
 
   return (

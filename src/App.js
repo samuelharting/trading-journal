@@ -1,5 +1,7 @@
 import React, { useState, useEffect, createContext } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./firebase";
 import HomePage from "./pages/HomePage";
 import MonthPage from "./pages/MonthPage";
 import DayPage from "./pages/DayPage";
@@ -14,25 +16,27 @@ import EditAccountPage from "./pages/EditAccountPage";
 export const UserContext = createContext();
 
 function App() {
-  const [user, setUser] = useState(() => localStorage.getItem('journalUser') || null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    document.documentElement.classList.add('dark');
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthReady(true);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const login = (username) => {
-    setUser(username);
-    localStorage.setItem('journalUser', username);
-  };
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('journalUser');
-  };
+  useEffect(() => {
+    console.log('App.js currentUser:', currentUser, 'authReady:', authReady);
+  }, [currentUser, authReady]);
+
+  if (!authReady) return null;
 
   return (
-    <UserContext.Provider value={{ user, login, logout }}>
+    <UserContext.Provider value={{ currentUser }}>
       <Router>
-        {user ? (
+        {currentUser ? (
           <Layout>
             <Routes>
               <Route path="/" element={<HomePage />} />

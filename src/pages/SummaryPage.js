@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   CurrencyDollarIcon,
   ChartBarIcon,
@@ -237,148 +237,21 @@ function getWeeklyPnlsForMonth(entries, year, month) {
   return weeks;
 }
 
-// Trading Score Calculation Functions
-function calculateTradingScore(entries) {
-  if (!entries.length) return { score: 0, breakdown: {} };
-  
-  // Filter out deposits, payouts, and tape reading - only include actual trades
-  const tradeEntries = entries.filter(e => 
-    !e.isDeposit && 
-    !e.isPayout && 
-    !e.isTapeReading && 
-    e.pnl !== undefined && 
-    e.pnl !== null && 
-    e.pnl !== ""
-  );
-  
-  if (!tradeEntries.length) return { score: 0, breakdown: {} };
-
-  // Win Rate (40 points)
-  const wins = tradeEntries.filter(e => Number(e.pnl) > 0).length;
-  const totalTrades = tradeEntries.length;
-  const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
-  
-  let winRateScore = 0;
-  if (winRate >= 80) winRateScore = 20;
-  else if (winRate >= 60) winRateScore = 15;
-  else if (winRate >= 40) winRateScore = 10;
-  else if (winRate >= 20) winRateScore = 5;
-  else winRateScore = 0;
-
-  // Consecutive wins (20 points)
-  let maxConsecutiveWins = 0;
-  let currentStreak = 0;
-  tradeEntries.forEach(e => {
-    if (Number(e.pnl) > 0) {
-      currentStreak++;
-      maxConsecutiveWins = Math.max(maxConsecutiveWins, currentStreak);
-    } else {
-      currentStreak = 0;
-    }
-  });
-  
-  let consecutiveWinsScore = 0;
-  if (maxConsecutiveWins >= 5) consecutiveWinsScore = 20;
-  else if (maxConsecutiveWins >= 4) consecutiveWinsScore = 15;
-  else if (maxConsecutiveWins >= 3) consecutiveWinsScore = 10;
-  else if (maxConsecutiveWins >= 2) consecutiveWinsScore = 5;
-  else consecutiveWinsScore = 0;
-
-  // Overall P&L (20 points)
-  const totalPnl = tradeEntries.reduce((sum, e) => sum + (Number(e.pnl) || 0), 0);
-  let overallPnlScore = 0;
-  if (totalPnl > 0) overallPnlScore = 20;
-  else if (totalPnl === 0) overallPnlScore = 10;
-  else overallPnlScore = 0;
-
-  // Profit Consistency (15 points) - per week
-  const dailyPnl = {};
-  tradeEntries.forEach(e => {
-    const d = new Date(e.created);
-    const day = d.toLocaleDateString();
-    dailyPnl[day] = (dailyPnl[day] || 0) + (Number(e.pnl) || 0);
-  });
-  
-  // Group by week
-  const weeklyPnl = {};
-  tradeEntries.forEach(e => {
-    const d = new Date(e.created);
-    const week = `${d.getFullYear()}-W${getWeekNumber(d)}`;
-    weeklyPnl[week] = (weeklyPnl[week] || 0) + (Number(e.pnl) || 0);
-  });
-  
-  const redWeeks = Object.values(weeklyPnl).filter(pnl => pnl < 0).length;
-  let profitConsistencyScore = 0;
-  if (redWeeks === 0) profitConsistencyScore = 15;
-  else if (redWeeks <= 2) profitConsistencyScore = 10;
-  else if (redWeeks <= 4) profitConsistencyScore = 5;
-  else profitConsistencyScore = 0;
-
-  // Tilt Detection (15 points)
-  let maxConsecutiveLosses = 0;
-  let currentLossStreak = 0;
-  tradeEntries.forEach(e => {
-    if (Number(e.pnl) < 0) {
-      currentLossStreak++;
-      maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentLossStreak);
-    } else {
-      currentLossStreak = 0;
-    }
-  });
-  
-  let tiltDetectionScore = 0;
-  if (maxConsecutiveLosses === 0) tiltDetectionScore = 15;
-  else if (maxConsecutiveLosses === 2) tiltDetectionScore = 10;
-  else if (maxConsecutiveLosses === 3) tiltDetectionScore = 5;
-  else tiltDetectionScore = 0;
-
-  // Trading Frequency (10 points)
-  const tradesPerDay = {};
-  tradeEntries.forEach(e => {
-    const d = new Date(e.created);
-    const day = d.toLocaleDateString();
-    tradesPerDay[day] = (tradesPerDay[day] || 0) + 1;
-  });
-  
-  const avgTradesPerDay = Object.values(tradesPerDay).reduce((a, b) => a + b, 0) / Object.keys(tradesPerDay).length;
-  let tradingFrequencyScore = 0;
-  if (avgTradesPerDay >= 1 && avgTradesPerDay <= 3) tradingFrequencyScore = 10;
-  else if (avgTradesPerDay >= 4 && avgTradesPerDay <= 5) tradingFrequencyScore = 7;
-  else if (avgTradesPerDay >= 6 && avgTradesPerDay <= 7) tradingFrequencyScore = 4;
-  else tradingFrequencyScore = 0;
-
-  const totalScore = winRateScore + consecutiveWinsScore + overallPnlScore + profitConsistencyScore + tiltDetectionScore + tradingFrequencyScore;
-  
-  return {
-    score: Math.round(totalScore),
-    breakdown: {
-      winRate: { score: winRateScore, max: 20, percentage: winRate },
-      consecutiveWins: { score: consecutiveWinsScore, max: 20, count: maxConsecutiveWins },
-      overallPnl: { score: overallPnlScore, max: 20, value: totalPnl },
-      profitConsistency: { score: profitConsistencyScore, max: 15, redWeeks },
-      tiltDetection: { score: tiltDetectionScore, max: 15, maxLossStreak: maxConsecutiveLosses },
-      tradingFrequency: { score: tradingFrequencyScore, max: 10, avgTradesPerDay }
-    }
-  };
-}
-
 const SummaryPage = () => {
-  const { user } = useContext(UserContext);
+  const { currentUser } = useContext(UserContext);
   const [stats, setStats] = useState(null);
   const [curveData, setCurveData] = useState({ curve: [], points: [] });
   const [streaks, setStreaks] = useState({});
   const [entries, setEntries] = useState([]);
   const [dailyPnl, setDailyPnl] = useState({});
   const [loading, setLoading] = useState(true);
-  const [tradingScore, setTradingScore] = useState({ score: 0, breakdown: {} });
-  const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!user) return;
+    if (!currentUser) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', user, 'entries');
+      const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
       const snap = await getDocs(entriesCol);
       const data = snap.docs.map(doc => doc.data());
       setEntries(data);
@@ -386,11 +259,14 @@ const SummaryPage = () => {
       setCurveData(getEquityCurve(data));
       setStreaks(getStreaks(data));
       setDailyPnl(getDailyPnl(data));
-      setTradingScore(calculateTradingScore(data));
       setLoading(false);
     };
     fetchEntries();
-  }, [user]);
+  }, [currentUser]);
+
+  useEffect(() => {
+    console.log('SummaryPage user:', currentUser, 'entries:', entries, 'loading:', loading);
+  }, [currentUser, entries, loading]);
 
   const { curve, points } = curveData;
   const minY = Math.min(...curve);
@@ -493,10 +369,10 @@ const SummaryPage = () => {
 
   const handleReset = async () => {
     if (!window.confirm('Are you sure you want to reset your account? This will delete ALL your journal entries and cannot be undone.')) return;
-    if (!user) return;
-    const entriesCol = collection(db, 'journalEntries', user, 'entries');
+    if (!currentUser) return;
+    const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
     const snap = await getDocs(entriesCol);
-    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'journalEntries', user, 'entries', docSnap.id))));
+    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'journalEntries', currentUser.uid, 'entries', docSnap.id))));
     window.location.reload();
   };
 
@@ -505,6 +381,8 @@ const SummaryPage = () => {
     navigate('/edit-account');
   };
 
+  const totalPayouts = entries.filter(e => e.isPayout).length;
+
   return (
     <div className="w-full min-h-screen bg-black pt-20 px-4 sm:px-8">
       <div className="flex justify-between items-center mb-2">
@@ -512,185 +390,6 @@ const SummaryPage = () => {
         <button onClick={handleEdit} className="bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold shadow ml-4">Edit Account</button>
       </div>
       
-      {/* Trading Score Display */}
-      {!loading && stats && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="flex justify-center mb-8"
-        >
-          <div className="relative">
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowScoreBreakdown(!showScoreBreakdown)}
-              className="relative cursor-pointer"
-            >
-              {/* Score Circle */}
-              {/* Mobile SVG */}
-              <svg width="150" height="150" className="transform -rotate-90 sm:hidden">
-                <circle
-                  cx="75"
-                  cy="75"
-                  r="60"
-                  stroke="rgba(255,255,255,0.1)"
-                  strokeWidth="6"
-                  fill="none"
-                />
-                <circle
-                  cx="75"
-                  cy="75"
-                  r="60"
-                  stroke={tradingScore.score <= 40 ? "#ef4444" : tradingScore.score <= 70 ? "#eab308" : "#22c55e"}
-                  strokeWidth="6"
-                  fill="none"
-                  strokeDasharray={`${(tradingScore.score / 100) * 376.8} 376.8`}
-                  strokeLinecap="round"
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
-              
-              {/* Desktop SVG */}
-              <svg width="200" height="200" className="transform -rotate-90 hidden sm:block">
-                <circle
-                  cx="100"
-                  cy="100"
-                  r="80"
-                  stroke="rgba(255,255,255,0.1)"
-                  strokeWidth="8"
-                  fill="none"
-                />
-                <circle
-                  cx="100"
-                  cy="100"
-                  r="80"
-                  stroke={tradingScore.score <= 40 ? "#ef4444" : tradingScore.score <= 70 ? "#eab308" : "#22c55e"}
-                  strokeWidth="8"
-                  fill="none"
-                  strokeDasharray={`${(tradingScore.score / 100) * 502.4} 502.4`}
-                  strokeLinecap="round"
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
-              
-              {/* Score Text */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="text-3xl sm:text-4xl font-bold text-[#e5e5e5]">{tradingScore.score}</div>
-                <div className="text-xs sm:text-sm text-neutral-400">Score</div>
-              </div>
-            </motion.div>
-            
-            {/* Score Label */}
-            <div className="text-center mt-4">
-              <div className={`text-base sm:text-lg font-bold ${
-                tradingScore.score <= 40 ? "text-red-400" : 
-                tradingScore.score <= 70 ? "text-yellow-400" : 
-                "text-green-400"
-              }`}>
-                {tradingScore.score <= 40 ? "Needs Improvement" : 
-                 tradingScore.score <= 70 ? "Good" : 
-                 "Excellent"}
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Score Breakdown Modal */}
-      <AnimatePresence>
-        {showScoreBreakdown && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowScoreBreakdown(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              className="bg-neutral-900 rounded-2xl p-4 sm:p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5] mb-6 text-center">Trading Score Breakdown</div>
-              
-              <div className="space-y-4">
-                <div className="bg-neutral-800 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[#e5e5e5] font-semibold text-sm sm:text-base">Win Rate (20 pts)</span>
-                    <span className="text-green-400 font-bold text-sm sm:text-base">{tradingScore.breakdown.winRate?.score || 0}/20</span>
-                  </div>
-                  <div className="text-xs sm:text-sm text-neutral-400">
-                    {tradingScore.breakdown.winRate?.percentage?.toFixed(1) || 0}% win rate
-                  </div>
-                </div>
-                
-                <div className="bg-neutral-800 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[#e5e5e5] font-semibold text-sm sm:text-base">Consecutive Wins (20 pts)</span>
-                    <span className="text-green-400 font-bold text-sm sm:text-base">{tradingScore.breakdown.consecutiveWins?.score || 0}/20</span>
-                  </div>
-                  <div className="text-xs sm:text-sm text-neutral-400">
-                    Max consecutive wins: {tradingScore.breakdown.consecutiveWins?.count || 0}
-                  </div>
-                </div>
-                
-                <div className="bg-neutral-800 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[#e5e5e5] font-semibold text-sm sm:text-base">Overall P&L (20 pts)</span>
-                    <span className="text-green-400 font-bold text-sm sm:text-base">{tradingScore.breakdown.overallPnl?.score || 0}/20</span>
-                  </div>
-                  <div className="text-xs sm:text-sm text-neutral-400">
-                    Total P&L: ${tradingScore.breakdown.overallPnl?.value?.toFixed(2) || 0}
-                  </div>
-                </div>
-                
-                <div className="bg-neutral-800 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[#e5e5e5] font-semibold text-sm sm:text-base">Profit Consistency (15 pts)</span>
-                    <span className="text-green-400 font-bold text-sm sm:text-base">{tradingScore.breakdown.profitConsistency?.score || 0}/15</span>
-                  </div>
-                  <div className="text-xs sm:text-sm text-neutral-400">
-                    Red weeks: {tradingScore.breakdown.profitConsistency?.redWeeks || 0}
-                  </div>
-                </div>
-                
-                <div className="bg-neutral-800 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[#e5e5e5] font-semibold text-sm sm:text-base">Tilt Detection (15 pts)</span>
-                    <span className="text-green-400 font-bold text-sm sm:text-base">{tradingScore.breakdown.tiltDetection?.score || 0}/15</span>
-                  </div>
-                  <div className="text-xs sm:text-sm text-neutral-400">
-                    Max consecutive losses: {tradingScore.breakdown.tiltDetection?.maxLossStreak || 0}
-                  </div>
-                </div>
-                
-                <div className="bg-neutral-800 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[#e5e5e5] font-semibold text-sm sm:text-base">Trading Frequency (10 pts)</span>
-                    <span className="text-green-400 font-bold text-sm sm:text-base">{tradingScore.breakdown.tradingFrequency?.score || 0}/10</span>
-                  </div>
-                  <div className="text-xs sm:text-sm text-neutral-400">
-                    Avg trades per day: {tradingScore.breakdown.tradingFrequency?.avgTradesPerDay?.toFixed(1) || 0}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="text-center mt-6">
-                <button
-                  onClick={() => setShowScoreBreakdown(false)}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-semibold"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {loading ? (
         <div className="flex justify-center items-center py-24 w-full">
           <div className="w-full max-w-2xl flex flex-col gap-6">
@@ -765,9 +464,13 @@ const SummaryPage = () => {
               <div className="text-base sm:text-lg font-bold mb-2">Total Trades</div>
               <div className="text-blue-300 text-xl sm:text-2xl font-bold">{stats.totalTrades}</div>
             </motion.div>
+            <motion.div custom={5} variants={sectionVariants} className="bg-white/10 backdrop-blur-md rounded-xl p-4 sm:p-8 flex flex-col gap-2 border border-white/10 shadow-2xl text-[#e5e5e5]">
+              <div className="text-base sm:text-lg font-bold mb-2">Total Payouts Taken</div>
+              <div className="text-yellow-300 text-xl sm:text-2xl font-bold">{totalPayouts}</div>
+            </motion.div>
           </div>
           {/* Streaks */}
-          <motion.div custom={5} variants={sectionVariants} className="bg-white/10 backdrop-blur-md rounded-xl p-4 sm:p-8 flex flex-col gap-2 border border-white/10 shadow-2xl text-[#e5e5e5] w-full">
+          <motion.div custom={6} variants={sectionVariants} className="bg-white/10 backdrop-blur-md rounded-xl p-4 sm:p-8 flex flex-col gap-2 border border-white/10 shadow-2xl text-[#e5e5e5] w-full">
             <div className="text-base sm:text-lg font-bold mb-2">Streak Tracker</div>
             <div className="flex flex-wrap gap-4 sm:gap-6 text-sm sm:text-base">
               <div><span className="text-green-400 font-semibold">Green Day Streak:</span> {streaks.greenStreak}</div>

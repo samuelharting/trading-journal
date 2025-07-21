@@ -15,7 +15,7 @@ const months = [
 ];
 
 const HomePage = () => {
-  const { user } = useContext(UserContext);
+  const { currentUser } = useContext(UserContext);
   const navigate = useNavigate();
   // Year dropdown logic: always start at 2025, go up to max(current year + 1, selected year, 2026)
   const currentYear = new Date().getFullYear();
@@ -27,17 +27,21 @@ const HomePage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!currentUser) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', user, 'entries');
+      const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
       const snap = await getDocs(entriesCol);
       const data = snap.docs.map(doc => doc.data());
       setEntries(data);
       setLoading(false);
     };
     fetchEntries();
-  }, [user]);
+  }, [currentUser]);
+
+  useEffect(() => {
+    console.log('HomePage user:', currentUser, 'entries:', entries, 'loading:', loading);
+  }, [currentUser, entries, loading]);
 
   // Aggregate P&L and trade counts by month
   const monthData = useMemo(() => {

@@ -12,7 +12,7 @@ import { CalendarIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const MonthPage = () => {
-  const { user } = useContext(UserContext);
+  const { currentUser } = useContext(UserContext);
   const { year, month } = useParams();
   const navigate = useNavigate();
   const monthIndex = parseInt(month, 10) - 1;
@@ -22,17 +22,21 @@ const MonthPage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!currentUser) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', user, 'entries');
+      const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
       const snap = await getDocs(entriesCol);
       const data = snap.docs.map(doc => doc.data());
       setEntries(data);
       setLoading(false);
     };
     fetchEntries();
-  }, [user]);
+  }, [currentUser]);
+
+  useEffect(() => {
+    console.log('MonthPage user:', currentUser, 'entries:', entries, 'loading:', loading);
+  }, [currentUser, entries, loading]);
 
   // Aggregate P&L by day
   const dayData = useMemo(() => {

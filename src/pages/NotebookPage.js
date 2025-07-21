@@ -25,12 +25,12 @@ function saveNotebook(user, data) {
 }
 
 export default function NotebookPage() {
-  const { user } = useContext(UserContext);
-  console.log('[NOTEBOOK] NotebookPage user:', user);
+  const { currentUser } = useContext(UserContext);
+  console.log('[NOTEBOOK] NotebookPage user:', currentUser);
   // Initialize sections from localStorage for the current user
-  const [sections, setSections] = useState(() => loadNotebook(user));
-  const [selectedSection, setSelectedSection] = useState(() => localStorage.getItem(getSectionKey(user)));
-  const [selectedPage, setSelectedPage] = useState(() => localStorage.getItem(getPageKey(user)));
+  const [sections, setSections] = useState(() => loadNotebook(currentUser?.uid));
+  const [selectedSection, setSelectedSection] = useState(() => localStorage.getItem(getSectionKey(currentUser?.uid)));
+  const [selectedPage, setSelectedPage] = useState(() => localStorage.getItem(getPageKey(currentUser?.uid)));
   const [editingSection, setEditingSection] = useState(null);
   const [editingPage, setEditingPage] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -38,22 +38,22 @@ export default function NotebookPage() {
 
   // Save to localStorage
   useEffect(() => {
-    if (user) {
-      saveNotebook(user, sections);
+    if (currentUser) {
+      saveNotebook(currentUser.uid, sections);
     }
-  }, [sections, user]);
+  }, [sections, currentUser]);
 
   // Save selected section/page to localStorage
   useEffect(() => {
-    if (user && selectedSection) {
-      localStorage.setItem(getSectionKey(user), selectedSection);
-      console.log('[NOTEBOOK] saveSelectedSection', { user, selectedSection, localStorage });
+    if (currentUser && selectedSection) {
+      localStorage.setItem(getSectionKey(currentUser.uid), selectedSection);
+      console.log('[NOTEBOOK] saveSelectedSection', { user: currentUser.uid, selectedSection, localStorage });
     }
-    if (user && selectedPage) {
-      localStorage.setItem(getPageKey(user), selectedPage);
-      console.log('[NOTEBOOK] saveSelectedPage', { user, selectedPage, localStorage });
+    if (currentUser && selectedPage) {
+      localStorage.setItem(getPageKey(currentUser.uid), selectedPage);
+      console.log('[NOTEBOOK] saveSelectedPage', { user: currentUser.uid, selectedPage, localStorage });
     }
-  }, [selectedSection, selectedPage, user]);
+  }, [selectedSection, selectedPage, currentUser]);
 
   // Section helpers
   const addSection = () => {
