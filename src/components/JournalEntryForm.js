@@ -298,10 +298,6 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
               <label className="text-xs font-semibold text-blue-300 mb-1">Account Balance After Deposit</label>
               <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all" />
             </div>
-            <div className="flex flex-col gap-2 w-full">
-              <label className="text-lg sm:text-xl font-extrabold text-blue-400 mb-1">Notes (optional)</label>
-              <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-lg sm:text-2xl font-bold" />
-            </div>
           </motion.div>
         ) : entryType === 'payout' ? (
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
@@ -320,10 +316,6 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                 <label className="text-xs font-semibold text-blue-300 mb-1">Account Balance After Payout</label>
                 <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} className="w-full bg-neutral-900 text-blue-200 p-3 rounded-md border-none focus:ring-2 focus:ring-blue-400 transition-all text-xl font-bold" />
               </div>
-            </div>
-            <div className="flex flex-col gap-2 w-full mt-2">
-              <label className="text-lg sm:text-xl font-extrabold text-blue-200 mb-1">Notes (optional)</label>
-              <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-blue-100 p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-400 transition-all min-h-[80px] text-lg sm:text-2xl font-bold" />
             </div>
           </motion.div>
         ) : entryType === 'tape' ? (
@@ -518,7 +510,18 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                 />
               </div>
             </motion.div>
-            {/* Upload Screenshots, Premarket Expectations, and Notes sections remain unchanged and are positioned after the new fields */}
+            {/* Notes box for trade entry */}
+            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <DocumentTextIcon className="w-6 h-6 sm:w-7 sm:h-7 text-blue-300" />
+                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">Notes</div>
+              </div>
+              <div className="flex flex-col gap-2 w-full">
+                <label className="text-lg sm:text-xl font-extrabold text-blue-400 mb-1">Notes</label>
+                <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-lg sm:text-2xl font-bold" />
+              </div>
+            </motion.div>
           </>
         )}
         {/* Simple Save Button at the bottom */}
