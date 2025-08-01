@@ -1,27 +1,15 @@
 import React, { useState, useRef, useContext } from "react";
 import { motion } from "framer-motion";
 import {
-  CurrencyDollarIcon,
-  ClockIcon,
-  ChartBarIcon,
   CameraIcon,
-  DocumentTextIcon,
-  FaceSmileIcon,
-  ScaleIcon,
-  BanknotesIcon,
-  QuestionMarkCircleIcon
+  DocumentTextIcon
 } from "@heroicons/react/24/outline";
 import { storage } from '../firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { UserContext } from '../App';
 
-const gradeOptions = ["A+", "A", "B", "C", "D"];
 const tickerOptions = ["MES", "MNQ", "BTC", "GL", "SL"];
-const sessionOptions = ["AM", "PM"];
-const liquidityOptions = ["Yes", "No"];
-const macroOptions = ["Yes", "No"];
-const oteOptions = ["Yes", "No"];
-const targetOptions = ["HTF Liquidity", "REH", "REL", "EQ", "NDOG", "inefficiency"];
+const poiOptions = ["REHs", "RELs", "ORG", "HTF PD Array", "HTF Liquidity", "EQ"];
 
 const initialState = {
   ticker: "",
@@ -32,26 +20,10 @@ const initialState = {
   duration: "",
   entryTime: "",
   exitTime: "",
-  howFeltBefore: "",
-  premarketAnalysis: "",
-  howFeltDuring: "",
-  howFeltAfter: "",
-  grade: "A",
   tickerTraded: "MES",
-  session: "AM",
-  liquiditySweep: "No",
-  screenshots: [],
-  macro: "No",
-  ote: "No",
-  target: "HTF Liquidity",
 };
 
-const iconClass = "w-5 h-5 inline-block mr-2 text-blue-400 align-middle";
 
-const sectionVariants = {
-  hidden: { opacity: 0, y: 30 },
-  visible: (i) => ({ opacity: 1, y: 0, transition: { delay: i * 0.10, duration: 0.4 } })
-};
 
 const entryTypeOptions = [
   { value: 'trade', label: 'Trade' },
@@ -60,23 +32,14 @@ const entryTypeOptions = [
   { value: 'payout', label: 'Payout' },
 ];
 
-function Tooltip({ text }) {
-  return (
-    <span className="relative group cursor-pointer">
-      <QuestionMarkCircleIcon className="w-4 h-4 text-blue-400 inline ml-1 align-text-top" />
-      <span className="absolute left-1/2 -translate-x-1/2 mt-2 w-48 bg-neutral-800 text-xs text-blue-200 rounded-lg shadow-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none">
-        {text}
-      </span>
-    </span>
-  );
-}
 
-function Toggle({ value, onChange, label, tooltip }) {
+
+function Toggle({ value, onChange, label }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-blue-300 text-sm font-semibold">{label}{tooltip && <Tooltip text={tooltip} />}</span>
-      <button type="button" onClick={() => onChange(!value)} className={`ml-2 w-10 h-6 rounded-full transition-colors duration-200 ${value ? 'bg-green-500' : 'bg-neutral-700'}`}> 
-        <span className={`block w-5 h-5 rounded-full bg-white shadow transform transition-transform duration-200 ${value ? 'translate-x-4' : ''}`}></span>
+      <span className="text-blue-300 text-sm font-semibold">{label}</span>
+      <button type="button" onClick={() => onChange(!value)} className={`ml-2 w-8 h-5 rounded-full transition-colors duration-200 ${value ? 'bg-green-500' : 'bg-neutral-700'}`}> 
+        <span className={`block w-4 h-4 rounded-full bg-white shadow transform transition-transform duration-200 ${value ? 'translate-x-4' : ''}`}></span>
       </button>
       <span className="text-xs text-blue-200 ml-1">{value ? 'Yes' : 'No'}</span>
     </div>
@@ -115,16 +78,21 @@ function trimFirestoreDoc(doc) {
   return trimmed;
 }
 
+// Helper function to calculate account balance
+function calculateAccountBalance(previousBalance, pnl) {
+  const prev = Number(previousBalance) || 0;
+  const pnlValue = Number(pnl) || 0;
+  return (Math.round((prev + pnlValue) * 100) / 100).toFixed(2);
+}
+
 const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
   const { currentUser, selectedAccount } = useContext(UserContext);
   const [form, setForm] = useState({ ...initialState, accountBalance: initialAccountBalance ?? "" });
   const [screenshots, setScreenshots] = useState([]);
-  const [accountManuallyEdited, setAccountManuallyEdited] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [entryType, setEntryType] = useState('trade');
   const fileInputRef = useRef();
-  const [dragActive, setDragActive] = useState(false);
 
   // Add new state for all toggles and POI
   const [sessionContext, setSessionContext] = useState({
@@ -141,12 +109,9 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
     smt: false,
   });
   const [poi, setPoi] = useState('');
-  const [poiContext, setPoiContext] = useState({
-    poiYesNo: false,
-  });
-  // Add new state for economic release and day of week
+
+  // Add new state for economic release
   const [economicRelease, setEconomicRelease] = useState("");
-  const [dayOfWeek, setDayOfWeek] = useState("");
 
   // Helper to auto-format time as HH:MM
   function formatTimeInput(value) {
@@ -191,22 +156,17 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
       return;
     }
     setForm((prev) => ({ ...prev, [name]: value }));
-    if (name === "accountBalance") setAccountManuallyEdited(true);
-    // Remove any logic that auto-updates accountBalance based on PnL input
   };
 
   // Drag and drop handlers
   const handleDragOver = (e) => {
     e.preventDefault();
-    setDragActive(true);
   };
   const handleDragLeave = (e) => {
     e.preventDefault();
-    setDragActive(false);
   };
   const handleDrop = (e) => {
     e.preventDefault();
-    setDragActive(false);
     const files = Array.from(e.dataTransfer.files);
     handleFiles(files);
   };
@@ -265,10 +225,9 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
       ...tradeEnv,
       poi,
       economicRelease,
-      dayOfWeek,
-      pnl: entryType === 'trade' ? form.pnl : entryType === 'payout' ? '-' + form.pnl : '0',
+      pnl: entryType === 'trade' ? Number(form.pnl) : entryType === 'payout' ? -Number(form.pnl) : entryType === 'deposit' ? Number(form.pnl) : 0,
       rr: entryType === 'trade' ? form.rr : '0',
-      accountBalance: form.accountBalance,
+      accountBalance: calculateAccountBalance(form.accountBalance, entryType === 'trade' ? Number(form.pnl) : entryType === 'payout' ? -Number(form.pnl) : entryType === 'deposit' ? Number(form.pnl) : 0),
       screenshots: urls,
       created: createdTimestamp,
       tapeReading: entryType === 'tape',
@@ -285,8 +244,9 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
       const { db } = await import('../firebase');
       const { collection, addDoc } = await import('firebase/firestore');
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-      await addDoc(entriesCol, trimmedEntry);
-      onSave();
+      const docRef = await addDoc(entriesCol, trimmedEntry);
+      // Pass the saved entry data to onSave callback
+      onSave({ ...trimmedEntry, id: docRef.id });
       setForm(initialState);
       setScreenshots([]);
     }
@@ -294,36 +254,62 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-95">
-      <motion.div initial="hidden" animate="visible" variants={{}} className="w-full h-full bg-black p-0 flex flex-col gap-6 sm:gap-10 overflow-y-auto border-none px-2 sm:px-8">
-        {/* Entry Type Dropdown */}
-        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-          className="flex items-center gap-4 px-4 sm:px-8 pt-2 pb-2">
-          <label className="text-base sm:text-lg font-semibold text-[#e5e5e5]">Entry Type</label>
+    <form onSubmit={handleSubmit} className="fixed inset-0 z-50 flex flex-col bg-black bg-opacity-95">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-sm p-3 flex justify-between items-center border-b border-neutral-800">
+        {/* Entry Type Dropdown on the left */}
+        <div className="flex items-center gap-4">
+          <label className="text-base font-semibold text-[#e5e5e5]">Entry Type</label>
           <select
             value={entryType}
             onChange={handleEntryTypeChange}
-            className="bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-sm sm:text-base"
+            className="bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-sm"
           >
             {entryTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
-        </motion.div>
-        {/* Render fields based on entryType */}
-        {(entryType === 'trade' || entryType === 'tape') && (
+        </div>
+        
+        {/* Save/Cancel buttons on the right */}
+        <div className="flex gap-4">
+          <motion.button 
+            whileHover={{ scale: 1.06 }} 
+            whileTap={{ scale: 0.98 }} 
+            type="submit" 
+            className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl text-xl font-extrabold shadow-lg border-none outline-none" 
+            disabled={uploading || submitting}
+          >
+            {uploading ? 'Uploading...' : submitting ? 'Saving...' : 'Save'}
+          </motion.button>
+          <motion.button 
+            whileHover={{ scale: 1.04 }} 
+            whileTap={{ scale: 0.98 }} 
+            type="button" 
+            className="bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] px-6 py-3 rounded-md text-base transition-all border-none outline-none shadow-none" 
+            onClick={onCancel} 
+            disabled={uploading}
+          >
+            Cancel
+          </motion.button>
+        </div>
+      </div>
+
+      {/* Screenshot Uploader - Full Width */}
+      {(entryType === 'trade' || entryType === 'tape') && (
+        <div className="w-full bg-neutral-900/80 rounded-b-xl px-4 py-3 border-b border-neutral-800">
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className={`relative flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-10 pb-4 sm:pb-6 rounded-2xl border-2 border-neutral-800 bg-neutral-900/80 shadow-lg mb-2`}
+            className={`relative flex flex-col items-center justify-center px-4 pt-6 pb-3 rounded-2xl border-2 border-neutral-800 bg-neutral-900/80 shadow-lg mb-2`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
             <div className="flex flex-col items-center w-full">
-              <CameraIcon className="w-8 h-8 sm:w-10 sm:h-10 text-blue-400 mb-2" />
-              <div className="text-lg sm:text-xl font-bold text-[#e5e5e5] mb-2">Upload Screenshots</div>
-              <div className="text-sm text-neutral-400 mb-4">Drag & drop images here, or</div>
+              <CameraIcon className="w-6 h-6 text-blue-400 mb-2" />
+              <div className="text-lg font-bold text-[#e5e5e5] mb-2">Upload Screenshots</div>
+              <div className="text-sm text-neutral-400 mb-3">Drag & drop images here, or</div>
               <button
                 type="button"
                 onClick={() => fileInputRef.current.click()}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-6 sm:px-8 py-2 sm:py-3 rounded-lg text-base sm:text-lg font-bold shadow-lg mb-4"
+                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg text-base font-bold shadow-lg mb-3"
               >
                 Select Images
               </button>
@@ -336,10 +322,10 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                 className="hidden"
               />
               {screenshots.length > 0 && (
-                <div className="flex flex-wrap gap-2 sm:gap-4 mt-4 w-full justify-center">
+                <div className="flex flex-wrap gap-2 mt-3 w-full justify-center">
                   {screenshots.map((src, idx) => (
                     <div key={idx} className="relative group">
-                      <img src={src} alt="Screenshot" className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg border-2 border-white/10 shadow-md" />
+                      <img src={src} alt="Screenshot" className="w-20 h-20 object-cover rounded-lg border-2 border-white/10 shadow-md" />
                       <button type="button" onClick={() => handleRemoveScreenshot(idx)} className="absolute top-1 right-1 bg-black/70 text-[#e5e5e5] rounded-full px-2 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                     </div>
                   ))}
@@ -347,187 +333,190 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
               )}
             </div>
           </motion.div>
-        )}
+        </div>
+      )}
+
+      <motion.div initial="hidden" animate="visible" variants={{}} className="flex-1 bg-black p-0 flex flex-col gap-4 overflow-y-auto border-none px-2">
+        {/* Render fields based on entryType */}
         {entryType === 'deposit' ? (
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className="bg-blue-900/40 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md flex flex-col gap-6 sm:gap-8">
-            <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
-              <label className="text-xs font-semibold text-blue-300 mb-1">Account Balance After Deposit</label>
-              <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all" />
+            className="relative bg-neutral-900/90 rounded-2xl px-4 py-6 mb-2 shadow-xl border border-green-700/40 flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center mb-2">
+              <span className="text-2xl font-extrabold text-green-300 mb-1">Deposit</span>
+              <span className="text-base font-semibold text-green-200 mb-2">Adding funds to your account</span>
+              <span className="text-xs text-green-400 italic">Keep building your trading capital.</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+              <div className="flex flex-col gap-2 flex-1 min-w-[180px]">
+                <label className="text-xs font-semibold text-green-300 mb-1">Deposit Amount</label>
+                <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-green-200 p-3 rounded-md border-none focus:ring-2 focus:ring-green-400 transition-all text-lg font-bold" placeholder="Enter deposit amount" />
+              </div>
+              <div className="flex flex-col gap-2 flex-1 min-w-[180px]">
+                <label className="text-xs font-semibold text-green-300 mb-1">Account Balance After Deposit</label>
+                <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-green-200 p-3 rounded-md border-none focus:ring-2 focus:ring-green-400 transition-all text-lg font-bold" />
+              </div>
             </div>
           </motion.div>
         ) : entryType === 'payout' ? (
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className="relative bg-neutral-900/90 rounded-2xl px-6 sm:px-12 py-8 mb-2 shadow-xl border border-blue-700/40 flex flex-col items-center gap-6">
+            className="relative bg-neutral-900/90 rounded-2xl px-4 py-6 mb-2 shadow-xl border border-blue-700/40 flex flex-col items-center gap-4">
             <div className="flex flex-col items-center mb-2">
-              <span className="text-3xl font-extrabold text-blue-300 mb-1">Payout</span>
+              <span className="text-2xl font-extrabold text-blue-300 mb-1">Payout</span>
               <span className="text-base font-semibold text-blue-200 mb-2">Congrats on your payout!</span>
               <span className="text-xs text-blue-400 italic">Reward yourself for your discipline.</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
               <div className="flex flex-col gap-2 flex-1 min-w-[180px]">
                 <label className="text-xs font-semibold text-blue-300 mb-1">Payout Amount</label>
-                <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} className="w-full bg-neutral-900 text-blue-200 p-3 rounded-md border-none focus:ring-2 focus:ring-blue-400 transition-all text-xl font-bold" placeholder="Enter payout amount" />
+                <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-blue-200 p-3 rounded-md border-none focus:ring-2 focus:ring-blue-400 transition-all text-lg font-bold" placeholder="Enter payout amount" />
               </div>
               <div className="flex flex-col gap-2 flex-1 min-w-[180px]">
                 <label className="text-xs font-semibold text-blue-300 mb-1">Account Balance After Payout</label>
-                <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} className="w-full bg-neutral-900 text-blue-200 p-3 rounded-md border-none focus:ring-2 focus:ring-blue-400 transition-all text-xl font-bold" />
+                <input name="accountBalance" type="number" step="0.01" value={form.accountBalance} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-blue-200 p-3 rounded-md border-none focus:ring-2 focus:ring-blue-400 transition-all text-lg font-bold" />
               </div>
             </div>
           </motion.div>
         ) : (
-          // Modern grouped trade form
-          <>
-            {/* Grouped Card Sections */}
-            <motion.div className="bg-neutral-900/80 rounded-2xl p-6 mb-4 border border-white/10 shadow-md">
-              <div className="flex items-center mb-4">
-                <span className="text-lg font-bold text-blue-300">Session Context</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Toggle value={sessionContext.dailyHighLowTaken} onChange={v => setSessionContext(sc => ({ ...sc, dailyHighLowTaken: v }))} label="Daily high/low taken before trade?" tooltip="Did price take out a daily high or low before your entry?" />
+          // Two-Column Layout for Trade Form
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4 pb-4">
+            {/* Left Column */}
+            <div className="flex flex-col gap-4">
+              {/* Session Context Card */}
+              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
+                <div className="flex items-center mb-3">
+                  <span className="text-base font-bold text-blue-300">Session Context</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Toggle value={sessionContext.dailyHighLowTaken} onChange={v => setSessionContext(sc => ({ ...sc, dailyHighLowTaken: v }))} label="Daily high/low taken before trade?" />
+                  <div>
+                    <label className="text-blue-300 text-sm font-semibold flex items-center">Economic Release and Time</label>
+                    <input
+                      type="text"
+                      className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md mt-1"
+                      placeholder="e.g. CPI 8:30, FOMC 14:00"
+                      value={economicRelease}
+                      onChange={e => setEconomicRelease(e.target.value)}
+                    />
+                  </div>
+
+                                     <Toggle
+                     value={sessionContext.aboveBelow0000}
+                     onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0000: v }))}
+                     label="Aligned with 00:00 open?"
+                   />
+                   <Toggle
+                     value={sessionContext.aboveBelow0830}
+                     onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0830: v }))}
+                     label="Aligned with 8:30 open?"
+                   />
+                   <Toggle
+                     value={sessionContext.aboveBelow0930}
+                     onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0930: v }))}
+                     label="Aligned with 9:30 open?"
+                   />
+                                     <Toggle value={sessionContext.macroRange} onChange={v => setSessionContext(sc => ({ ...sc, macroRange: v }))} label="Macro" />
+                </div>
+              </motion.div>
+
+              {/* Trade Environment Card */}
+              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
+                <div className="flex items-center mb-3">
+                  <span className="text-base font-bold text-blue-300">Trade Environment</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Toggle value={tradeEnv.judasSwing} onChange={v => setTradeEnv(te => ({ ...te, judasSwing: v }))} label="9:30 Judas swing?" />
+                  <Toggle value={tradeEnv.silverBullet} onChange={v => setTradeEnv(te => ({ ...te, silverBullet: v }))} label="Silver Bullet?" />
+                  <Toggle value={tradeEnv.manipulation} onChange={v => setTradeEnv(te => ({ ...te, manipulation: v }))} label="Clear manipulation in opposite direction?" />
+                  <Toggle value={tradeEnv.smt} onChange={v => setTradeEnv(te => ({ ...te, smt: v }))} label="SMT?" />
+                </div>
+              </motion.div>
+
+              {/* POI Card */}
+              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
+                <div className="flex items-center mb-3">
+                  <span className="text-base font-bold text-blue-300">POI / Bias</span>
+                </div>
                 <div>
-                  <label className="text-blue-300 text-sm font-semibold flex items-center">Economic Release and Time <Tooltip text="E.g. CPI 8:30, FOMC 14:00, NFP, etc." /></label>
-                  <input
-                    type="text"
-                    className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md mt-1"
-                    placeholder="e.g. CPI 8:30, FOMC 14:00"
-                    value={economicRelease}
-                    onChange={e => setEconomicRelease(e.target.value)}
+                  <label className="text-blue-300 text-sm font-semibold mb-2">POI</label>
+                  <div className="flex flex-wrap gap-2">
+                    {poiOptions.map(option => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setPoi(poi === option ? '' : option)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                          poi === option
+                            ? 'bg-blue-600 text-white shadow-lg'
+                            : 'bg-neutral-800 text-[#e5e5e5] hover:bg-neutral-700 border border-neutral-600'
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+
+            {/* Right Column */}
+            <div className="flex flex-col gap-4">
+              {/* Core Trade Inputs - 3 Column Grid */}
+              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
+                <div className="flex items-center mb-3">
+                  <span className="text-base font-bold text-blue-300">Trade Details</span>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Row 1: Ticker, P&L, R:R */}
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-neutral-400 mb-1">Ticker</label>
+                    <select name="tickerTraded" value={form.tickerTraded} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all text-sm" >
+                      {tickerOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-neutral-400 mb-1">P&L</label>
+                    <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-green-700 transition-all text-sm" placeholder="$" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-neutral-400 mb-1">R:R</label>
+                    <input name="rr" type="number" step="0.01" value={form.rr} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-purple-700 transition-all text-sm" placeholder="e.g. 2.5" />
+                  </div>
+                  {/* Row 2: Entry Time, Exit Time, Duration */}
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-neutral-400 mb-1">Entry Time</label>
+                    <input name="entryTime" type="text" value={form.entryTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all text-sm" placeholder="e.g. 09:30" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-neutral-400 mb-1">Exit Time</label>
+                    <input name="exitTime" type="text" value={form.exitTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all text-sm" placeholder="e.g. 10:15" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-neutral-400 mb-1">Duration</label>
+                    <input name="duration" type="text" value={form.duration} readOnly className="w-full bg-neutral-700 text-[#e5e5e5] p-2 rounded-md border-none text-sm" placeholder="Auto-calculated" />
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Notes Panel */}
+              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md flex-1">
+                <div className="flex items-center gap-3 mb-3">
+                  <DocumentTextIcon className="w-6 h-6 text-blue-300" />
+                  <div className="text-base font-bold text-[#e5e5e5]">Notes</div>
+                </div>
+                <div className="flex flex-col gap-2 h-full">
+                  <label className="text-sm font-semibold text-blue-400 mb-1">Notes</label>
+                  <textarea 
+                    name="notes" 
+                    value={form.notes} 
+                    onChange={handleChange} 
+                    className="flex-1 w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all resize-none" 
+                    placeholder="Enter your trade notes here..."
                   />
                 </div>
-                <div>
-                  <label className="text-blue-300 text-sm font-semibold flex items-center">Day of the Week</label>
-                  <select
-                    className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md mt-1"
-                    value={dayOfWeek}
-                    onChange={e => setDayOfWeek(e.target.value)}
-                  >
-                    <option value="">Select Day</option>
-                    <option value="Monday">Monday</option>
-                    <option value="Tuesday">Tuesday</option>
-                    <option value="Wednesday">Wednesday</option>
-                    <option value="Thursday">Thursday</option>
-                    <option value="Friday">Friday</option>
-                  </select>
-                </div>
-                <Toggle
-                  value={sessionContext.aboveBelow0000}
-                  onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0000: v }))}
-                  label="Above 00:00 open?"
-                  tooltip="ON = Above, OFF = Below (Relative to the midnight open price.)"
-                />
-                <Toggle
-                  value={sessionContext.aboveBelow0830}
-                  onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0830: v }))}
-                  label="Above 8:30 open?"
-                  tooltip="ON = Above, OFF = Below (Relative to the 8:30am open price.)"
-                />
-                <Toggle
-                  value={sessionContext.aboveBelow0930}
-                  onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0930: v }))}
-                  label="Above 9:30 open?"
-                  tooltip="ON = Above, OFF = Below (Relative to the 9:30am open price.)"
-                />
-                <Toggle value={sessionContext.macroRange} onChange={v => setSessionContext(sc => ({ ...sc, macroRange: v }))} label="Macro range?" tooltip="Was price consolidating in a higher timeframe range?" />
-              </div>
-            </motion.div>
-            <motion.div className="bg-neutral-900/80 rounded-2xl p-6 mb-4 border border-white/10 shadow-md">
-              <div className="flex items-center mb-4">
-                <span className="text-lg font-bold text-blue-300">Trade Environment</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Toggle value={tradeEnv.judasSwing} onChange={v => setTradeEnv(te => ({ ...te, judasSwing: v }))} label="9:30 Judas swing?" tooltip="Did price make a false move after the 9:30 open?" />
-                <Toggle value={tradeEnv.silverBullet} onChange={v => setTradeEnv(te => ({ ...te, silverBullet: v }))} label="Silver Bullet?" tooltip="Was there a clear Silver Bullet setup?" />
-                <Toggle value={tradeEnv.manipulation} onChange={v => setTradeEnv(te => ({ ...te, manipulation: v }))} label="Clear manipulation in opposite direction?" tooltip="Did price move against your bias before your entry?" />
-                <Toggle value={tradeEnv.smt} onChange={v => setTradeEnv(te => ({ ...te, smt: v }))} label="SMT?" tooltip="Did you observe Smart Money Technique (SMT) divergence?" />
-              </div>
-            </motion.div>
-            <motion.div className="bg-neutral-900/80 rounded-2xl p-6 mb-4 border border-white/10 shadow-md">
-              <div className="flex items-center mb-4">
-                <span className="text-lg font-bold text-blue-300">POI / Bias</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-blue-300 text-sm font-semibold flex items-center">POI <Tooltip text="Point of Interest for your trade." /></label>
-                  <select className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md mt-1" value={poi} onChange={e => setPoi(e.target.value)}>
-                    <option value="">Select POI</option>
-                    <option value="REHs">REHs</option>
-                    <option value="RELs">RELs</option>
-                    <option value="ORG">ORG</option>
-                    <option value="HTF PD Array">HTF PD Array</option>
-                    <option value="HTF Liquidity">HTF Liquidity</option>
-                    <option value="EQ">EQ</option>
-                  </select>
-                </div>
-              </div>
-            </motion.div>
-            {/* Trade core fields, unchanged but after new sections */}
-            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8 w-full">
-                {/* Row 1: Ticker | P&L */}
-                <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
-                  <label className="text-xs font-semibold text-neutral-400 mb-1">Ticker</label>
-                  <select name="tickerTraded" value={form.tickerTraded} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" >
-                    {tickerOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                  </select>
-                </div>
-                <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
-                  <label className="text-xs font-semibold text-neutral-400 mb-1">P&L</label>
-                  <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-green-700 transition-all" placeholder="$" />
-                </div>
-                {/* Row 2: R:R | Entry Time */}
-                <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
-                  <label className="text-xs font-semibold text-neutral-400 mb-1">R:R <span className="ml-1 text-neutral-500">(Risk to Reward Ratio)</span></label>
-                  <input name="rr" type="number" step="0.01" value={form.rr} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-purple-700 transition-all" placeholder="e.g. 2.5" />
-                </div>
-                <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
-                  <label className="text-xs font-semibold text-neutral-400 mb-1">Entry Time</label>
-                  <input name="entryTime" type="text" value={form.entryTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" placeholder="e.g. 09:30" />
-                </div>
-                {/* Row 3: Exit Time | (empty for symmetry) */}
-                <div className="flex flex-col gap-2 flex-1 min-w-[220px]">
-                  <label className="text-xs font-semibold text-neutral-400 mb-1">Exit Time</label>
-                  <input name="exitTime" type="text" value={form.exitTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all" placeholder="e.g. 10:15" />
-                </div>
-                <div className="flex flex-col gap-2 flex-1 min-w-[220px]" />
-              </div>
-            </motion.div>
-            {/* Current Account Size Field */}
-            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
-              <div className="flex flex-col gap-2 w-full">
-                <label className="text-base sm:text-lg font-bold text-green-300 mb-1">Current Account Size (optional)</label>
-                <input
-                  name="accountBalance"
-                  type="number"
-                  step="0.01"
-                  value={form.accountBalance}
-                  onChange={handleChange}
-                  className="w-full bg-neutral-900 text-green-200 p-3 rounded-md border-none focus:ring-2 focus:ring-green-400 transition-all text-lg font-bold"
-                  placeholder="Enter current account size (leave blank to auto-calculate)"
-                />
-              </div>
-            </motion.div>
-            {/* Notes box for trade entry */}
-            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-              className="bg-neutral-900/80 rounded-xl px-4 sm:px-8 py-4 sm:py-6 mb-2 shadow-md">
-              <div className="flex items-center gap-3 mb-4 sm:mb-6">
-                <DocumentTextIcon className="w-6 h-6 sm:w-7 sm:h-7 text-blue-300" />
-                <div className="text-xl sm:text-2xl font-bold text-[#e5e5e5]">Notes</div>
-              </div>
-              <div className="flex flex-col gap-2 w-full">
-                <label className="text-lg sm:text-xl font-extrabold text-blue-400 mb-1">Notes</label>
-                <textarea name="notes" value={form.notes} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-4 sm:p-6 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all min-h-[120px] text-lg sm:text-2xl font-bold" />
-              </div>
-            </motion.div>
-          </>
+              </motion.div>
+            </div>
+          </div>
         )}
-        {/* Simple Save Button at the bottom */}
-        <div className="flex gap-4 sm:gap-6 mt-6 sm:mt-8 justify-end w-full px-4 sm:px-8 pb-4 sm:pb-8">
-          <motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.98 }} type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-xl text-2xl font-extrabold shadow-lg border-none outline-none mt-4" disabled={uploading || submitting}>{uploading ? 'Uploading...' : submitting ? 'Saving...' : 'Save'}</motion.button>
-          <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }} type="button" className="bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] px-6 sm:px-10 py-3 sm:py-4 rounded-md text-lg sm:text-xl transition-all border-none outline-none shadow-none" onClick={onCancel} disabled={uploading}>Cancel</motion.button>
-        </div>
       </motion.div>
     </form>
   );

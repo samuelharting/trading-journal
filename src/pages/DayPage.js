@@ -80,32 +80,20 @@ const DayPage = () => {
   let initialAccountBalance = "";
   if (entries.length > 0) {
     const last = entries[entries.length - 1];
-    const prevBalance = Number(last.accountBalance) || 0;
-    const prevPnl = Number(last.pnl) || 0;
-    const sum = (Math.round(prevBalance * 100) + Math.round(prevPnl * 100)) / 100;
-    initialAccountBalance = sum.toFixed(2);
+    // Use the account balance from the last entry directly
+    initialAccountBalance = (Number(last.accountBalance) || 0).toFixed(2);
   }
 
-  const handleAddEntry = async (entry) => {
+  const handleAddEntry = async (savedEntry) => {
     if (!currentUser || !selectedAccount) return;
-    const { db } = await import('../firebase');
-    const { collection, addDoc, getDocs, query, where, orderBy } = await import('firebase/firestore');
-    const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-    // Ensure year, month, day fields are set
-    const now = new Date();
-    const entryYear = entry.year || String(now.getFullYear());
-    const entryMonth = entry.month || String(now.getMonth() + 1);
-    const entryDay = entry.day || String(now.getDate());
-    const trimmedEntry = trimFirestoreDoc({ ...entry, year: entryYear, month: entryMonth, day: entryDay });
-    if (trimmedEntry) {
-      await addDoc(entriesCol, trimmedEntry);
-      // Refetch entries from Firestore
-      const q = query(entriesCol, where('month', '==', month), where('day', '==', day), orderBy('created', 'asc'));
-      const snap = await getDocs(q);
-      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-      setEntries(data);
-    } else {
-      console.warn("Entry trimmed to undefined, not saving.");
+    
+    // Add the saved entry to the local state immediately
+    if (savedEntry) {
+      setEntries(prevEntries => {
+        // Add the new entry to the existing entries and sort by created timestamp
+        const newEntries = [...prevEntries, savedEntry];
+        return newEntries.sort((a, b) => new Date(a.created) - new Date(b.created));
+      });
     }
   };
 

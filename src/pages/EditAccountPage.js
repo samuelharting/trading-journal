@@ -29,10 +29,16 @@ const EditAccountPage = () => {
         let bal = 0;
         sorted.forEach(e => {
           if (e.isDeposit) {
-            bal = Number(e.accountBalance) || 0;
-          } else {
+            // For deposits, add the deposit amount to the current balance
+            bal += Number(e.pnl) || 0;
+          } else if (e.isPayout) {
+            // For payouts, add the payout amount (pnl is stored as negative)
+            bal += Number(e.pnl) || 0; // pnl is already negative for payouts
+          } else if (!e.isTapeReading) {
+            // For trades, add the P&L to the previous balance
             bal += Number(e.pnl) || 0;
           }
+          // Tape reading entries don't affect balance
         });
         setCurrentBalance(bal.toFixed(2));
       }
@@ -49,7 +55,7 @@ const EditAccountPage = () => {
       // Add a new deposit entry to correct the balance
       const entriesCol = collection(db, 'journalEntries', user, 'entries');
       await addDoc(entriesCol, {
-        accountBalance: parseFloat(currentBalance),
+        pnl: parseFloat(currentBalance), // Store the correction amount in pnl field
         notes: "Account balance correction",
         created: new Date().toISOString(),
         isDeposit: true,

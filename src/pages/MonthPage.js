@@ -48,9 +48,9 @@ const MonthPage = () => {
         const idx = parseInt(entry.day, 10) - 1;
         if (idx >= 0 && idx < daysInMonth) {
           // Only count actual trades (not deposits, payouts, or tape reading)
-          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined;
-          data[idx].pnl += Number(entry.pnl) || 0;
+          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined && entry.pnl !== null && entry.pnl !== "";
           if (isActualTrade) {
+            data[idx].pnl += Number(entry.pnl) || 0;
             data[idx].count += 1;
           }
         }
@@ -76,8 +76,17 @@ const MonthPage = () => {
 
   // Helper to compute weekly PnL and trade counts for the month
   function getWeeklyPnls(entries, year, month, calendarGrid) {
-    // Only entries in the given month
-    const filtered = entries.filter(e => String(e.year) === String(year) && String(e.month) === String(month));
+    // Only entries in the given month that are actual trades
+    const filtered = entries.filter(e => 
+      String(e.year) === String(year) && 
+      String(e.month) === String(month) &&
+      !e.isDeposit && 
+      !e.isPayout && 
+      !e.isTapeReading &&
+      e.pnl !== undefined &&
+      e.pnl !== null &&
+      e.pnl !== ""
+    );
     // Build a map day->PnL and day->count
     const dayPnls = {};
     const dayCounts = {};
@@ -85,11 +94,7 @@ const MonthPage = () => {
       const day = parseInt(e.day, 10);
       if (!isNaN(day)) {
         dayPnls[day] = (dayPnls[day] || 0) + (Number(e.pnl) || 0);
-        // Only count actual trades (not deposits, payouts, or tape reading)
-        const isActualTrade = !e.isDeposit && !e.isPayout && !e.isTapeReading && e.pnl !== undefined;
-        if (isActualTrade) {
-          dayCounts[day] = (dayCounts[day] || 0) + 1;
-        }
+        dayCounts[day] = (dayCounts[day] || 0) + 1;
       }
     });
     // For each week in the grid, sum the PnL and count for the days in that week

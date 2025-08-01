@@ -3,57 +3,96 @@ import { PlusIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/solid';
 import { BookOpenIcon } from '@heroicons/react/24/outline';
 import { UserContext } from '../App';
 
+// Notebook data is stored at the user level (not account level) so it's shared across all accounts
 function getNotebookKey(user) { return `notebookData-${user || 'default'}`; }
 function getSectionKey(user) { return `notebookSelectedSection-${user || 'default'}`; }
 function getPageKey(user) { return `notebookSelectedPage-${user || 'default'}`; }
 
 function loadNotebook(user) {
+  if (!user) {
+    console.log('[NOTEBOOK] loadNotebook: No user provided, returning empty array');
+    return [];
+  }
+  
   const key = getNotebookKey(user);
   let data;
   try {
     data = JSON.parse(localStorage.getItem(key)) || [];
-  } catch {
+  } catch (error) {
+    console.error('[NOTEBOOK] loadNotebook: Error parsing data:', error);
     data = [];
   }
-  console.log('[NOTEBOOK] loadNotebook:', { user, key, data, localStorage });
+  console.log('[NOTEBOOK] loadNotebook:', { user, key, dataLength: data.length });
   return data;
 }
+
 function saveNotebook(user, data) {
+  if (!user) {
+    console.error('[NOTEBOOK] saveNotebook: No user provided, cannot save');
+    return;
+  }
+  
   const key = getNotebookKey(user);
-  localStorage.setItem(key, JSON.stringify(data));
-  console.log('[NOTEBOOK] saveNotebook:', { user, key, data, localStorage });
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+    console.log('[NOTEBOOK] saveNotebook:', { user, key, dataLength: data.length });
+  } catch (error) {
+    console.error('[NOTEBOOK] saveNotebook: Error saving data:', error);
+  }
 }
 
 export default function NotebookPage() {
   const { currentUser } = useContext(UserContext);
   console.log('[NOTEBOOK] NotebookPage user:', currentUser);
+  
   // Initialize sections from localStorage for the current user
-  const [sections, setSections] = useState(() => loadNotebook(currentUser?.uid));
-  const [selectedSection, setSelectedSection] = useState(() => localStorage.getItem(getSectionKey(currentUser?.uid)));
-  const [selectedPage, setSelectedPage] = useState(() => localStorage.getItem(getPageKey(currentUser?.uid)));
+  const [sections, setSections] = useState([]);
+  const [selectedSection, setSelectedSection] = useState(null);
+  const [selectedPage, setSelectedPage] = useState(null);
   const [editingSection, setEditingSection] = useState(null);
   const [editingPage, setEditingPage] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const editorRef = useRef();
 
+  // Load notebook data when user changes
+  useEffect(() => {
+    if (currentUser?.uid) {
+      const loadedSections = loadNotebook(currentUser.uid);
+      const loadedSelectedSection = localStorage.getItem(getSectionKey(currentUser.uid));
+      const loadedSelectedPage = localStorage.getItem(getPageKey(currentUser.uid));
+      
+      setSections(loadedSections);
+      setSelectedSection(loadedSelectedSection);
+      setSelectedPage(loadedSelectedPage);
+      
+      console.log('[NOTEBOOK] Loaded data for user:', currentUser.uid, {
+        sections: loadedSections,
+        selectedSection: loadedSelectedSection,
+        selectedPage: loadedSelectedPage
+      });
+    }
+  }, [currentUser?.uid]);
+
   // Save to localStorage
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser?.uid) {
       saveNotebook(currentUser.uid, sections);
     }
-  }, [sections, currentUser]);
+  }, [sections, currentUser?.uid]);
 
   // Save selected section/page to localStorage
   useEffect(() => {
-    if (currentUser && selectedSection) {
-      localStorage.setItem(getSectionKey(currentUser.uid), selectedSection);
-      console.log('[NOTEBOOK] saveSelectedSection', { user: currentUser.uid, selectedSection, localStorage });
+    if (currentUser?.uid) {
+      if (selectedSection) {
+        localStorage.setItem(getSectionKey(currentUser.uid), selectedSection);
+        console.log('[NOTEBOOK] saveSelectedSection', { user: currentUser.uid, selectedSection });
+      }
+      if (selectedPage) {
+        localStorage.setItem(getPageKey(currentUser.uid), selectedPage);
+        console.log('[NOTEBOOK] saveSelectedPage', { user: currentUser.uid, selectedPage });
+      }
     }
-    if (currentUser && selectedPage) {
-      localStorage.setItem(getPageKey(currentUser.uid), selectedPage);
-      console.log('[NOTEBOOK] saveSelectedPage', { user: currentUser.uid, selectedPage, localStorage });
-    }
-  }, [selectedSection, selectedPage, currentUser]);
+  }, [selectedSection, selectedPage, currentUser?.uid]);
 
   // Section helpers
   const addSection = () => {

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 
 const matrixChars = "アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズヅブプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポヴッンABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-export default function MatrixCornerRain({ width = 120, height = 180, columns = 8, showDuration = 2200 }) {
+export default function MatrixCornerRain({ width = 120, height = 180, columns = 8, showDuration = 800 }) {
   const [visible, setVisible] = useState(false);
   const [matrix, setMatrix] = useState(
     Array.from({ length: columns }, () => Array(Math.floor(height / 18)).fill(" "))

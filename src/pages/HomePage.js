@@ -51,10 +51,10 @@ const HomePage = () => {
       if (String(entry.year) === String(year)) {
         const idx = parseInt(entry.month, 10) - 1;
         if (idx >= 0 && idx < 12) {
-          data[idx].pnl += Number(entry.pnl) || 0;
           // Only count actual trades (not deposits, payouts, or tape reading)
-          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined;
+          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined && entry.pnl !== null && entry.pnl !== "";
           if (isActualTrade) {
+            data[idx].pnl += Number(entry.pnl) || 0;
             data[idx].count += 1;
           }
         }
