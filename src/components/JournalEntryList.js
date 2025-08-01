@@ -67,7 +67,7 @@ const JournalEntryList = ({ entries, loading }) => {
         <span className="text-2xl font-bold text-[#e5e5e5]">Journal Entries</span>
         <div className="flex-1 border-b border-white/10 ml-4" />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 w-full max-w-7xl mb-12 px-0 bg-black">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 w-full max-w-full mb-12 px-4">
         {entries.map((entry, idx) => (
           <motion.div
             key={idx}
@@ -75,8 +75,15 @@ const JournalEntryList = ({ entries, loading }) => {
             animate={{ opacity: 1, y: 0 }}
             whileHover={{ scale: 1.01, backgroundColor: '#18181b', boxShadow: '0 4px 32px #38bdf8aa' }}
             transition={{ duration: 0.3, delay: idx * 0.05 }}
-            className="bg-white/10 backdrop-blur-md rounded-xl p-4 flex flex-col gap-3 border border-white/10 shadow-2xl text-[#e5e5e5] min-h-[220px] transition-all duration-200"
+            className={`bg-white/10 backdrop-blur-md rounded-xl p-4 flex flex-col gap-3 border shadow-2xl text-[#e5e5e5] min-h-[220px] transition-all duration-200 relative ${
+              idx === 0 ? 'border-blue-400 border-2' : 'border-white/10'
+            }`}
           >
+            {idx === 0 && (
+              <div className="absolute -top-2 -left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full font-bold">
+                NEWEST
+              </div>
+            )}
             <div className="flex flex-wrap gap-2 text-base font-semibold mb-2">
               <div><span className="text-gray-400">{fieldLabel.tickerTraded}:</span> <span>{entry.tickerTraded}</span></div>
               <div><span className="text-gray-400">{fieldLabel.grade}:</span> <span>{entry.grade}</span></div>

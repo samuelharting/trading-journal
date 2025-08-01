@@ -17,12 +17,18 @@ function loadNotebook(user) {
   const key = getNotebookKey(user);
   let data;
   try {
-    data = JSON.parse(localStorage.getItem(key)) || [];
+    const stored = localStorage.getItem(key);
+    console.log('[NOTEBOOK] loadNotebook: Raw stored data:', stored);
+    data = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(data)) {
+      console.warn('[NOTEBOOK] loadNotebook: Data is not an array, resetting to empty array');
+      data = [];
+    }
   } catch (error) {
     console.error('[NOTEBOOK] loadNotebook: Error parsing data:', error);
     data = [];
   }
-  console.log('[NOTEBOOK] loadNotebook:', { user, key, dataLength: data.length });
+  console.log('[NOTEBOOK] loadNotebook:', { user, key, dataLength: data.length, data });
   return data;
 }
 
@@ -34,8 +40,17 @@ function saveNotebook(user, data) {
   
   const key = getNotebookKey(user);
   try {
-    localStorage.setItem(key, JSON.stringify(data));
-    console.log('[NOTEBOOK] saveNotebook:', { user, key, dataLength: data.length });
+    const jsonData = JSON.stringify(data);
+    localStorage.setItem(key, jsonData);
+    console.log('[NOTEBOOK] saveNotebook:', { user, key, dataLength: data.length, data });
+    
+    // Verify the save worked
+    const verify = localStorage.getItem(key);
+    if (verify !== jsonData) {
+      console.error('[NOTEBOOK] saveNotebook: Save verification failed!');
+    } else {
+      console.log('[NOTEBOOK] saveNotebook: Save verified successfully');
+    }
   } catch (error) {
     console.error('[NOTEBOOK] saveNotebook: Error saving data:', error);
   }
@@ -73,11 +88,37 @@ export default function NotebookPage() {
     }
   }, [currentUser?.uid]);
 
-  // Save to localStorage
+  // Save to localStorage whenever sections change
   useEffect(() => {
-    if (currentUser?.uid) {
+    if (currentUser?.uid && sections.length > 0) {
+      console.log('[NOTEBOOK] Sections changed, saving to localStorage');
       saveNotebook(currentUser.uid, sections);
     }
+  }, [sections, currentUser?.uid]);
+
+  // Force save every 5 seconds as backup
+  useEffect(() => {
+    if (!currentUser?.uid || sections.length === 0) return;
+    
+    const interval = setInterval(() => {
+      console.log('[NOTEBOOK] Auto-saving notebook data...');
+      saveNotebook(currentUser.uid, sections);
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [sections, currentUser?.uid]);
+
+  // Save on page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (currentUser?.uid && sections.length > 0) {
+        console.log('[NOTEBOOK] Page unloading, saving data...');
+        saveNotebook(currentUser.uid, sections);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [sections, currentUser?.uid]);
 
   // Save selected section/page to localStorage
@@ -142,11 +183,21 @@ export default function NotebookPage() {
     ));
   };
   const setPageContent = (sectionId, pageId, content) => {
-    setSections(s => s.map(sec =>
-      sec.id === sectionId
-        ? { ...sec, pages: sec.pages.map(p => p.id === pageId ? { ...p, content } : p) }
-        : sec
-    ));
+    setSections(s => {
+      const updatedSections = s.map(sec =>
+        sec.id === sectionId
+          ? { ...sec, pages: sec.pages.map(p => p.id === pageId ? { ...p, content } : p) }
+          : sec
+      );
+      
+      // Save immediately when content changes
+      if (currentUser?.uid) {
+        console.log('[NOTEBOOK] Content changed, saving immediately...');
+        saveNotebook(currentUser.uid, updatedSections);
+      }
+      
+      return updatedSections;
+    });
   };
 
   // Editor bullet support

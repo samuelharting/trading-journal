@@ -29,7 +29,12 @@ const TradesPage = () => {
       // Fetch all entries for selected account
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       const snap = await getDocs(entriesCol);
-      const allEntries = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).sort((a, b) => new Date(b.created) - new Date(a.created));
+      const allEntries = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).sort((a, b) => {
+        // Clean timestamps by removing the random suffix
+        const cleanA = a.created ? a.created.split('-').slice(0, -1).join('-') : '';
+        const cleanB = b.created ? b.created.split('-').slice(0, -1).join('-') : '';
+        return new Date(cleanB) - new Date(cleanA);
+      });
       // Fetch favorites
       const favDoc = await getDoc(doc(db, 'favorites', currentUser.uid + '_' + selectedAccount.id));
       setFavorites(favDoc.exists() ? favDoc.data().data : {});
@@ -59,8 +64,32 @@ const TradesPage = () => {
         }
       });
       
-      setGroupedImages(grouped.reverse());
-      setAllImages(allImagesArray.reverse());
+      // Sort by creation date (newest first) for proper grid flow
+      grouped.sort((a, b) => {
+        // Clean timestamps by removing the random suffix
+        const cleanA = a.entry.created ? a.entry.created.split('-').slice(0, -1).join('-') : '';
+        const cleanB = b.entry.created ? b.entry.created.split('-').slice(0, -1).join('-') : '';
+        return new Date(cleanB) - new Date(cleanA);
+      });
+      allImagesArray.sort((a, b) => {
+        // Clean timestamps by removing the random suffix
+        const cleanA = a.created ? a.created.split('-').slice(0, -1).join('-') : '';
+        const cleanB = b.created ? b.created.split('-').slice(0, -1).join('-') : '';
+        return new Date(cleanB) - new Date(cleanA);
+      });
+      
+      // Debug: Log the first few entries to see what's different
+      console.log('First 3 grouped entries:', JSON.stringify(grouped.slice(0, 3).map(g => ({
+        created: g.entry.created,
+        month: g.entry.month,
+        day: g.entry.day,
+        screenshots: g.entry.screenshots?.length,
+        entryKeys: Object.keys(g.entry),
+        fullEntry: g.entry
+      })), null, 2));
+      
+      setGroupedImages(grouped);
+      setAllImages(allImagesArray);
     };
     fetchData();
   }, [currentUser, selectedAccount]);
@@ -134,13 +163,14 @@ const TradesPage = () => {
   }, [selectedImage, selectedImageIndex]);
 
   return (
-    <div className="w-full min-h-screen bg-black pt-20 px-4 sm:px-8 relative overflow-x-hidden" style={{ zIndex: 0 }}>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.7 }}
-        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 sm:gap-12 w-full"
-      >
+    <div className="w-full min-h-screen bg-black pt-20 px-4 sm:px-8 relative" style={{ zIndex: 0 }}>
+      <div className="max-w-full overflow-y-auto" style={{ height: 'calc(100vh - 80px)' }}>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.7 }}
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 sm:gap-12 w-full pb-8"
+        >
         {groupedImages.length === 0 && (
           <div className="flex flex-col items-center justify-center col-span-full py-24">
             <Spinner size={48} />
@@ -216,7 +246,7 @@ const TradesPage = () => {
                   </motion.div>
                 ) : (
                   // Multiple images - stacked animation
-                  <>
+                  <div className="relative w-full h-full">
                     {group.images.map((img, imgIdx) => (
                       <motion.div
                         key={imgIdx}
@@ -273,7 +303,7 @@ const TradesPage = () => {
                     >
                       {group.totalImages}
                     </motion.div>
-                  </>
+                  </div>
                 )}
               </div>
 
@@ -311,6 +341,7 @@ const TradesPage = () => {
           </Tilt>
         ))}
       </motion.div>
+      </div>
 
       {/* Image Viewer Modal */}
       <AnimatePresence>

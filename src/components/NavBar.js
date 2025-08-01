@@ -1,7 +1,6 @@
 import React, { useContext, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { motion } from "framer-motion";
-import { PlusIcon } from '@heroicons/react/24/solid';
+import { PlusIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { UserContext } from "../App";
 import { db } from '../firebase';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
@@ -17,7 +16,7 @@ const RobotIcon = () => (
 );
 
 const NavBar = () => {
-  const { accounts, selectedAccount, setSelectedAccount, setAccounts, currentUser } = useContext(UserContext);
+  const { accounts, selectedAccount, setSelectedAccount, setAccounts, currentUser, setShowDeleteConfirm, setAccountToDelete } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
   const [showReset, setShowReset] = useState(false);
@@ -72,6 +71,8 @@ const NavBar = () => {
     window.location.reload();
   };
 
+
+
   // Helper function to determine if a button should be active
   const isButtonActive = (btn) => {
     if (!btn.path) return false;
@@ -93,56 +94,93 @@ const NavBar = () => {
     <nav className="fixed top-0 left-0 w-full z-40 backdrop-blur-sm bg-black/80 border-b border-white/10 flex items-center h-16 px-2 sm:px-4">
       {/* Account Dropdown - top left */}
       <div className="flex items-center gap-2">
-        {accounts && accounts.length > 0 && (
-          <div className="relative">
-            <select
-              value={selectedAccount ? selectedAccount.id : ''}
-              onChange={e => {
-                const acc = accounts.find(a => a.id === e.target.value);
-                if (acc) setSelectedAccount(acc);
-              }}
-              onFocus={() => setAccountDropdownOpen(true)}
-              onBlur={() => setTimeout(() => setAccountDropdownOpen(false), 150)}
-              className="backdrop-blur-sm bg-black/20 text-[#3B82F6] font-medium px-4 py-2 rounded-xl border border-white/10 focus:ring-2 focus:ring-[#3B82F6]/50 text-sm mr-2 shadow-lg"
+        <div className="relative">
+          {accounts && accounts.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedAccount ? selectedAccount.id : ''}
+                onChange={e => {
+                  const acc = accounts.find(a => a.id === e.target.value);
+                  if (acc) setSelectedAccount(acc);
+                }}
+                onFocus={() => setAccountDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setAccountDropdownOpen(false), 150)}
+                className="backdrop-blur-sm bg-black/20 text-[#3B82F6] font-medium px-4 py-2 rounded-xl border border-white/10 focus:ring-2 focus:ring-[#3B82F6]/50 text-sm shadow-lg"
+                style={{ 
+                  minWidth: 120,
+                  background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)'
+                }}
+              >
+                {accounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>{acc.name || 'Account'}</option>
+                ))}
+              </select>
+              
+              {/* Delete button for selected account */}
+              {selectedAccount && (
+                <button
+                  className="text-neutral-400 hover:text-red-400 transition-colors duration-200 p-1 rounded-md hover:bg-white/5"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setAccountToDelete(selectedAccount);
+                    setShowDeleteConfirm(true);
+                  }}
+                  title={`Delete ${selectedAccount.name}`}
+                >
+                  <XMarkIcon className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="backdrop-blur-sm bg-black/20 text-[#3B82F6] font-medium px-4 py-2 rounded-xl border border-white/10 text-sm mr-2 shadow-lg"
               style={{ 
                 minWidth: 120,
                 background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)'
               }}
             >
-              {accounts.map(acc => (
-                <option key={acc.id} value={acc.id}>{acc.name || 'Account'}</option>
-              ))}
-            </select>
-            {accountDropdownOpen && (
-              <button
-                className="backdrop-blur-sm bg-[#3B82F6] hover:bg-[#2563EB] text-white font-medium px-3 py-1 rounded-lg text-xs absolute left-full ml-2 top-1/2 -translate-y-1/2 shadow-lg border border-white/10"
-                onMouseDown={async (e) => {
-                  e.preventDefault();
-                  const name = window.prompt('Enter new account name:');
-                  if (!name || !currentUser) return;
-                  const { db } = await import('../firebase');
-                  const { collection, addDoc } = await import('firebase/firestore');
-                  const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
-                  const docRef = await addDoc(accountsCol, { name, created: new Date().toISOString() });
-                  setAccounts(prev => [...prev, { id: docRef.id, name, created: new Date().toISOString() }]);
-                  setSelectedAccount({ id: docRef.id, name, created: new Date().toISOString() });
-                }}
-                title="Add Account"
-              >+ Account</button>
-            )}
-          </div>
-        )}
+              No Accounts
+            </div>
+          )}
+          
+          {/* Add Account Button - always visible */}
+          <button
+            className="backdrop-blur-sm bg-[#3B82F6] hover:bg-[#2563EB] text-white font-medium px-3 py-1 rounded-lg text-xs ml-2 shadow-lg border border-white/10"
+            onClick={async (e) => {
+              e.preventDefault();
+              try {
+                const name = window.prompt('Enter new account name:');
+                if (!name || !currentUser) return;
+                
+                const { db } = await import('../firebase');
+                const { collection, addDoc } = await import('firebase/firestore');
+                const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
+                const docRef = await addDoc(accountsCol, { 
+                  name, 
+                  balance: 0,
+                  created: new Date().toISOString() 
+                });
+                
+                const newAccount = { id: docRef.id, name, balance: 0, created: new Date().toISOString() };
+                setAccounts(prev => [...prev, newAccount]);
+                setSelectedAccount(newAccount);
+                
+                console.log('Account created successfully:', newAccount);
+              } catch (error) {
+                console.error('Error creating account:', error);
+                alert('Failed to create account. Please try again.');
+              }
+            }}
+            title="Add Account"
+          >
+            + Account
+          </button>
+        </div>
       </div>
       <div className="flex gap-2 sm:gap-6 w-full justify-center items-center relative">
         {navButtonsWithQuickAdd.map((btn, idx) => {
           const isActive = isButtonActive(btn);
           return (
-            <motion.button
-              whileHover={{ 
-                scale: 1.05,
-                boxShadow: btn.label === 'Quick Add' ? '0 25px 50px -12px rgba(59, 130, 246, 0.3)' : '0 25px 50px -12px rgba(255, 255, 255, 0.1)'
-              }}
-              whileTap={{ scale: 0.98 }}
+            <button
               key={btn.path || btn.label}
               className={`px-3 sm:px-6 py-3 rounded-xl backdrop-blur-sm border border-white/10 focus:ring-2 focus:ring-[#3B82F6]/50 transition-all duration-200 flex items-center justify-center ${btn.label === 'Quick Add' ? 'bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold shadow-lg' : 'bg-black/20 hover:bg-black/40'} ${isActive ? 'text-[#10B981] ring-2 ring-[#10B981]/50' : 'text-[#e5e5e5]'} min-w-[48px] min-h-[48px]`}
               style={{
@@ -152,19 +190,14 @@ const NavBar = () => {
               title={btn.label}
             >
               {btn.icon}
-            </motion.button>
+            </button>
           );
         })}
         <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center">
           {(() => {
             const isActive = isButtonActive(contextBtn);
             return (
-              <motion.button
-                whileHover={{ 
-                  scale: 1.05,
-                  boxShadow: '0 25px 50px -12px rgba(255, 255, 255, 0.1)'
-                }}
-                whileTap={{ scale: 0.98 }}
+              <button
                 key={contextBtn.path}
                 className={`px-3 sm:px-6 py-3 rounded-xl backdrop-blur-sm bg-black/20 hover:bg-black/40 border border-white/10 focus:ring-2 focus:ring-[#3B82F6]/50 transition-all duration-200 flex items-center justify-center ${isActive ? 'text-[#10B981] ring-2 ring-[#10B981]/50' : 'text-[#e5e5e5]'} min-w-[48px] min-h-[48px]`}
                 style={{
@@ -174,7 +207,7 @@ const NavBar = () => {
                 title={contextBtn.label}
               >
                 {contextBtn.icon}
-              </motion.button>
+              </button>
             );
           })()}
         </div>

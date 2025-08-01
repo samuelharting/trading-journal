@@ -519,7 +519,7 @@ function getPercentageChanges(entries, currentBalance) {
       }
     });
     
-    return balance;
+    return Math.max(balance, 0.01); // Avoid division by zero, minimum 1 cent
   };
   
   const dayStartBalance = getStartingBalance(new Date(currentYear, currentMonth - 1, currentDay));
@@ -530,22 +530,22 @@ function getPercentageChanges(entries, currentBalance) {
   const result = {
     day: { 
       pnl: dayPnl, 
-      percentage: dayStartBalance !== 0 ? (dayPnl / dayStartBalance) * 100 : 0, 
+      percentage: (dayPnl / dayStartBalance) * 100, 
       startBalance: dayStartBalance 
     },
     week: { 
       pnl: weekPnl, 
-      percentage: weekStartBalance !== 0 ? (weekPnl / weekStartBalance) * 100 : 0, 
+      percentage: (weekPnl / weekStartBalance) * 100, 
       startBalance: weekStartBalance 
     },
     month: { 
       pnl: monthPnl, 
-      percentage: monthStartBalance !== 0 ? (monthPnl / monthStartBalance) * 100 : 0, 
+      percentage: (monthPnl / monthStartBalance) * 100, 
       startBalance: monthStartBalance 
     },
     year: { 
       pnl: yearPnl, 
-      percentage: yearStartBalance !== 0 ? (yearPnl / yearStartBalance) * 100 : 0, 
+      percentage: (yearPnl / yearStartBalance) * 100, 
       startBalance: yearStartBalance 
     }
   };
@@ -636,6 +636,16 @@ const SummaryPage = () => {
 
   // Calculate percentage changes (trading only, excluding deposits/payouts)
   const percentageChanges = getPercentageChanges(entries, currentBalance);
+  
+  // Debug logging for percentage calculations
+  if (percentageChanges) {
+    console.log('Percentage Changes Debug:', {
+      day: { pnl: percentageChanges.day.pnl, percentage: percentageChanges.day.percentage, startBalance: percentageChanges.day.startBalance },
+      week: { pnl: percentageChanges.week.pnl, percentage: percentageChanges.week.percentage, startBalance: percentageChanges.week.startBalance },
+      month: { pnl: percentageChanges.month.pnl, percentage: percentageChanges.month.percentage, startBalance: percentageChanges.month.startBalance },
+      year: { pnl: percentageChanges.year.pnl, percentage: percentageChanges.year.percentage, startBalance: percentageChanges.year.startBalance }
+    });
+  }
 
   // Find the most recent day, week, and month
   const mostRecentDay = dailyRows.length > 0 ? dailyRows[0] : null;

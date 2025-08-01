@@ -41,6 +41,17 @@ function trimFirestoreDoc(doc) {
   return trimmed;
 }
 
+// Helper function to extract timestamp from created field
+function extractTimestamp(created) {
+  // Handle format: "2025-08-01T19:45:18.759Z-tfxutu"
+  const parts = created.split('T');
+  if (parts.length >= 2) {
+    const timePart = parts[1].split('-')[0]; // Get "19:45:18.759Z"
+    return parts[0] + 'T' + timePart; // Return "2025-08-01T19:45:18.759Z"
+  }
+  return created; // Fallback to original if parsing fails
+}
+
 const DayPage = () => {
   const { currentUser, selectedAccount } = useContext(UserContext);
   const { month, day } = useParams();
@@ -58,10 +69,17 @@ const DayPage = () => {
       const { db } = await import('../firebase');
       const { collection, query, where, getDocs, orderBy } = await import('firebase/firestore');
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-      const q = query(entriesCol, where('month', '==', month), where('day', '==', day), orderBy('created', 'asc'));
+      const q = query(entriesCol, where('month', '==', month), where('day', '==', day));
       const snap = await getDocs(q);
       const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-      setEntries(data);
+      // Sort by created timestamp in descending order (newest first)
+      const sortedData = data.sort((a, b) => {
+        const aTimestamp = extractTimestamp(a.created);
+        const bTimestamp = extractTimestamp(b.created);
+        return new Date(bTimestamp) - new Date(aTimestamp);
+      });
+      console.log('Sorted entries:', sortedData.map(e => ({ id: e.id, created: e.created, ticker: e.tickerTraded })));
+      setEntries(sortedData);
       setLoading(false);
     };
     fetchEntries();
@@ -90,15 +108,20 @@ const DayPage = () => {
     // Add the saved entry to the local state immediately
     if (savedEntry) {
       setEntries(prevEntries => {
-        // Add the new entry to the existing entries and sort by created timestamp
+        // Add the new entry to the existing entries and sort by created timestamp (newest first)
         const newEntries = [...prevEntries, savedEntry];
-        return newEntries.sort((a, b) => new Date(a.created) - new Date(b.created));
+        return newEntries.sort((a, b) => {
+          const aTimestamp = extractTimestamp(a.created);
+          const bTimestamp = extractTimestamp(b.created);
+          return new Date(bTimestamp) - new Date(aTimestamp);
+        });
       });
     }
   };
 
   return (
-    <div className="flex flex-col items-center w-full relative">
+    <div className="w-full min-h-screen bg-black pt-20 px-4 sm:px-8 relative">
+      <div className="max-w-full overflow-y-auto" style={{ height: 'calc(100vh - 80px)' }}>
       <div className="absolute left-0 top-4 z-30">
         <button
           className="flex items-center gap-2 ml-6 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] rounded shadow"
@@ -133,8 +156,16 @@ const DayPage = () => {
       </div>
       {loading ? <div className="flex justify-center items-center py-24"><Spinner size={48} /></div> : <JournalEntryList entries={entries} />}
       {showForm && (
-        <JournalEntryForm onSave={() => setShowForm(false)} onCancel={() => setShowForm(false)} initialAccountBalance={initialAccountBalance} />
+        <JournalEntryForm 
+          onSave={(savedEntry) => {
+            handleAddEntry(savedEntry);
+            setShowForm(false);
+          }} 
+          onCancel={() => setShowForm(false)} 
+          initialAccountBalance={initialAccountBalance} 
+        />
       )}
+      </div>
     </div>
   );
 };

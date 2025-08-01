@@ -26,16 +26,25 @@ const HomePage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentUser || !selectedAccount) return;
+    if (!currentUser || !selectedAccount) {
+      setLoading(false);
+      return;
+    }
     const fetchEntries = async () => {
       setLoading(true);
-      const { db } = await import('../firebase');
-      const { collection, getDocs } = await import('firebase/firestore');
-      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-      const snap = await getDocs(entriesCol);
-      const data = snap.docs.map(doc => doc.data());
-      setEntries(data);
-      setLoading(false);
+      try {
+        const { db } = await import('../firebase');
+        const { collection, getDocs } = await import('firebase/firestore');
+        const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
+        const snap = await getDocs(entriesCol);
+        const data = snap.docs.map(doc => doc.data());
+        setEntries(data);
+      } catch (error) {
+        console.error('Error fetching entries:', error);
+        setEntries([]);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchEntries();
   }, [currentUser, selectedAccount]);
@@ -70,6 +79,14 @@ const HomePage = () => {
           <div className="bg-white/10 backdrop-blur-md rounded-2xl h-16 w-1/3 animate-pulse mb-4 shadow-2xl" />
           <div className="grid grid-cols-6 gap-10">
             {[...Array(12)].map((_,i) => <div key={i} className="bg-white/10 backdrop-blur-md rounded-xl h-48 animate-pulse shadow-2xl" />)}
+          </div>
+        </div>
+      ) : !selectedAccount ? (
+        <div className="flex flex-col items-center justify-center min-h-screen">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-[#e5e5e5] mb-4">No Account Selected</h2>
+            <p className="text-neutral-400 mb-6">Please wait while we set up your account...</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto"></div>
           </div>
         </div>
       ) : (
