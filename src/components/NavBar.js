@@ -56,12 +56,12 @@ const NavBar = () => {
 
   const handleReset = async () => {
     setResetting(true);
-    if (!currentUser) return;
+    if (!currentUser || !selectedAccount) return;
     
-    // Delete all journal entries (trades, deposits, payouts) but preserve notebook data
-    const entriesCol = collection(db, 'journalEntries', currentUser.uid, 'entries');
+    // Delete all journal entries (trades, deposits, payouts) for the selected account only
+    const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
     const snap = await getDocs(entriesCol);
-    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'journalEntries', currentUser.uid, 'entries', docSnap.id))));
+    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries', docSnap.id))));
     
     // Note: Notebook data is stored in localStorage and is already user-specific (not account-specific)
     // So it will automatically be preserved across all accounts for this user

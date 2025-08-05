@@ -7,7 +7,7 @@ import { collection, getDocs, doc, updateDoc, addDoc } from 'firebase/firestore'
 import { ArrowLeftIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
 
 const EditAccountPage = () => {
-  const { user } = useContext(UserContext);
+  const { currentUser, selectedAccount } = useContext(UserContext);
   const navigate = useNavigate();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,50 +15,63 @@ const EditAccountPage = () => {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!currentUser || !selectedAccount) return;
     const fetchEntries = async () => {
       setLoading(true);
-      const entriesCol = collection(db, 'journalEntries', user, 'entries');
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       const snap = await getDocs(entriesCol);
       const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
       setEntries(data);
       
-      // Calculate current balance
+      // Calculate current balance using the same logic as SummaryPage
       if (data.length > 0) {
         const sorted = [...data].sort((a, b) => new Date(a.created) - new Date(b.created));
-        let bal = 0;
+        let balance = 0;
+        
         sorted.forEach(e => {
           if (e.isDeposit) {
-            // For deposits, add the deposit amount to the current balance
-            bal += Number(e.pnl) || 0;
+            // For deposits, use stored accountBalance directly (don't double-count)
+            if (e.accountBalance && !isNaN(Number(e.accountBalance))) {
+              balance = Number(e.accountBalance);
+            } else {
+              // Fallback: use deposit amount
+              balance += Number(e.pnl) || 0;
+            }
           } else if (e.isPayout) {
-            // For payouts, add the payout amount (pnl is stored as negative)
-            bal += Number(e.pnl) || 0; // pnl is already negative for payouts
+            // For payouts, use stored accountBalance directly (don't double-count)
+            if (e.accountBalance && !isNaN(Number(e.accountBalance))) {
+              balance = Number(e.accountBalance);
+            } else {
+              // Fallback: use payout amount (already negative)
+              balance += Number(e.pnl) || 0;
+            }
           } else if (!e.isTapeReading) {
-            // For trades, add the P&L to the previous balance
-            bal += Number(e.pnl) || 0;
+            // For trades, add the P&L
+            balance += Number(e.pnl) || 0;
           }
           // Tape reading entries don't affect balance
         });
-        setCurrentBalance(bal.toFixed(2));
+        setCurrentBalance(balance.toFixed(2));
       }
       setLoading(false);
     };
     fetchEntries();
-  }, [user]);
+  }, [currentUser, selectedAccount]);
 
   const handleSave = async () => {
-    if (!user || !currentBalance) return;
+    if (!currentUser || !selectedAccount || !currentBalance) return;
     setSaving(true);
     
     try {
       // Add a new deposit entry to correct the balance
-      const entriesCol = collection(db, 'journalEntries', user, 'entries');
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
+      const correctionAmount = parseFloat(currentBalance);
       await addDoc(entriesCol, {
-        pnl: parseFloat(currentBalance), // Store the correction amount in pnl field
+        pnl: correctionAmount, // Store the correction amount in pnl field
         notes: "Account balance correction",
         created: new Date().toISOString(),
         isDeposit: true,
+        accountBalance: correctionAmount, // Set the final balance
         year: String(new Date().getFullYear()),
         month: String(new Date().getMonth() + 1),
         day: String(new Date().getDate())
