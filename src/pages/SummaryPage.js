@@ -32,8 +32,8 @@ function getStats(entries) {
     !e.isTapeReading && 
     e.pnl !== undefined && 
     e.pnl !== null && 
-    e.pnl !== "" && 
-    Number(e.pnl) !== 0
+    e.pnl !== ""
+    // Include $0 P&L trades (breakeven trades) in statistics
   );
   const totalPnl = sumPrecise(tradeEntries.map(e => e.pnl));
   const avgPnl = tradeEntries.length ? totalPnl / tradeEntries.length : 0;
@@ -133,8 +133,14 @@ function getEquityCurve(entries) {
         pnl = Number(e.pnl) || 0;
       }
     } else if (e.isPayout) {
-      // For payouts, use the payout amount (already negative) - affects balance only
-      pnl = Number(e.pnl) || 0;
+      // For payouts, use the stored accountBalance directly (don't double-count)
+      if (e.accountBalance && !isNaN(Number(e.accountBalance))) {
+        balance = Number(e.accountBalance);
+        affectsBalance = false; // Already set balance directly
+      } else {
+        // Fallback: use payout amount (already negative)
+        pnl = Number(e.pnl) || 0;
+      }
     } else if (!e.isTapeReading) {
       // For trades, use the P&L - affects both balance and equity curve
       pnl = Number(e.pnl) || 0;
