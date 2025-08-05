@@ -124,8 +124,14 @@ function getEquityCurve(entries) {
     let affectsBalance = true;
     
     if (e.isDeposit) {
-      // For deposits, use the deposit amount (stored in pnl field) - affects balance only
-      pnl = Number(e.pnl) || 0;
+      // For deposits, use the stored accountBalance directly (don't double-count)
+      if (e.accountBalance && !isNaN(Number(e.accountBalance))) {
+        balance = Number(e.accountBalance);
+        affectsBalance = false; // Already set balance directly
+      } else {
+        // Fallback: use deposit amount
+        pnl = Number(e.pnl) || 0;
+      }
     } else if (e.isPayout) {
       // For payouts, use the payout amount (already negative) - affects balance only
       pnl = Number(e.pnl) || 0;
