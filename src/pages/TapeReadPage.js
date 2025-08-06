@@ -6,6 +6,7 @@ import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
 export default function TapeReadPage() {
   const { currentUser, selectedAccount } = useContext(UserContext);
+  const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [screenshots, setScreenshots] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -56,12 +57,17 @@ export default function TapeReadPage() {
       );
       const { db } = await import('../firebase');
       const { collection, addDoc } = await import('firebase/firestore');
+      const now = new Date();
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       await addDoc(entriesCol, {
+        title,
         notes,
         screenshots: urls,
-        created: new Date().toISOString(),
-        isTapeReading: true,
+        created: now.toISOString(),
+        tapeReading: true,
+        year: now.getFullYear().toString(),
+        month: (now.getMonth() + 1).toString(),
+        day: now.getDate().toString(),
       });
       navigate('/');
     } catch (err) { console.error('TapeRead save error', err); }
@@ -94,6 +100,16 @@ export default function TapeReadPage() {
         </div>
         <h2 className="text-3xl font-extrabold text-blue-300 mb-2 text-center drop-shadow-glow">Tape Reading Entry</h2>
         <form onSubmit={handleSubmit} className="flex flex-col gap-8">
+          <div>
+            <label className="block text-base text-blue-200 mb-2 font-semibold">Title (Optional)</label>
+            <input
+              type="text"
+              className="w-full bg-blue-950/80 text-blue-100 rounded-xl p-4 border-2 border-blue-700 text-lg shadow-lg focus:ring-2 focus:ring-blue-400"
+              placeholder="Short title for this entry..."
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+            />
+          </div>
           <textarea
             className="w-full min-h-[120px] bg-blue-950/80 text-blue-100 rounded-xl p-4 border-2 border-blue-700 text-lg shadow-lg focus:ring-2 focus:ring-blue-400"
             placeholder="Tape reading notes..."

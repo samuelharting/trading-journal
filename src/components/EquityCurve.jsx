@@ -4,22 +4,22 @@ import { Sparklines, SparklinesLine } from "react-sparklines";
 export default function EquityCurve({ data = [], loading }) {
   if (loading) {
     return (
-      <div className="w-[400px] h-[200px] bg-neutral-900 rounded-2xl shadow-lg flex items-center justify-center animate-pulse">
-        <div className="w-1/2 h-6 bg-neutral-800 rounded shimmer" />
+      <div className="w-[400px] h-[160px] bg-black/20 rounded border border-neutral-800 flex items-center justify-center">
+        <div className="w-1/3 h-3 bg-neutral-800 rounded" />
       </div>
     );
   }
   if (!data || data.length < 2) {
     return (
-      <div className="w-[400px] h-[200px] bg-[#E0E0E0] rounded-2xl shadow-lg flex items-center justify-center">
-        <span className="text-[12px] text-neutral-500">Insufficient data</span>
+      <div className="w-[400px] h-[160px] bg-black/20 rounded border border-neutral-800 flex items-center justify-center">
+        <span className="text-sm text-neutral-500">No data</span>
       </div>
     );
   }
   return (
-    <div className="w-[400px] h-[200px] bg-neutral-900 rounded-2xl shadow-lg flex items-center justify-center" aria-label="Equity Curve">
-      <Sparklines data={data} width={380} height={160} margin={12}>
-        <SparklinesLine color="#2E7D32" style={{ strokeWidth: 3, fill: "none" }} />
+    <div className="w-[400px] h-[160px] bg-black/20 rounded border border-neutral-800 flex items-center justify-center" aria-label="Equity Curve">
+      <Sparklines data={data} width={380} height={140} margin={8}>
+        <SparklinesLine color="#3B82F6" style={{ strokeWidth: 1.5, fill: "none" }} />
       </Sparklines>
     </div>
   );

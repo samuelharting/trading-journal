@@ -12,6 +12,7 @@ const tickerOptions = ["MES", "MNQ", "BTC", "GL", "SL"];
 const poiOptions = ["REHs", "RELs", "ORG", "HTF PD Array", "HTF Liquidity", "EQ"];
 
 const initialState = {
+  title: "",
   ticker: "",
   pnl: "",
   rr: "",
@@ -20,7 +21,7 @@ const initialState = {
   duration: "",
   entryTime: "",
   exitTime: "",
-  tickerTraded: "MES",
+  tickerTraded: "MNQ",
 };
 
 
@@ -296,32 +297,143 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
       <motion.div initial="hidden" animate="visible" variants={{}} className="flex-1 bg-black p-0 flex flex-col gap-4 overflow-y-auto border-none px-2">
         {/* Render fields based on entryType */}
         {entryType === 'deposit' ? (
-          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className="relative bg-neutral-900/90 rounded-2xl px-4 py-6 mb-2 shadow-xl border border-green-700/40 flex flex-col items-center gap-4">
-            <div className="flex flex-col items-center mb-2">
-              <span className="text-2xl font-extrabold text-green-300 mb-1">Deposit</span>
-              <span className="text-base font-semibold text-green-200 mb-2">Adding funds to your account</span>
-              <span className="text-xs text-green-400 italic">Keep building your trading capital.</span>
+          <motion.div 
+            initial={{ opacity: 0, y: 50, scale: 0.95 }} 
+            animate={{ opacity: 1, y: 0, scale: 1 }} 
+            transition={{ duration: 0.8, type: "spring" }}
+            className="relative bg-gradient-to-br from-emerald-900/60 via-green-900/40 to-black/60 backdrop-blur-xl rounded-3xl mx-2 my-4 p-8 shadow-2xl border-2 border-emerald-400/30 flex flex-col items-center gap-8 min-h-[500px] overflow-hidden"
+          >
+            {/* Animated background elements */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <div className="absolute top-10 right-10 w-20 h-20 bg-emerald-400/10 rounded-full animate-pulse"></div>
+              <div className="absolute bottom-20 left-10 w-16 h-16 bg-green-400/10 rounded-full animate-ping" style={{animationDelay: '1s'}}></div>
+              <div className="absolute top-1/2 left-1/2 w-32 h-32 bg-emerald-300/5 rounded-full animate-pulse" style={{animationDelay: '0.5s'}}></div>
             </div>
-            <div className="flex justify-center w-full">
-              <div className="flex flex-col gap-2 max-w-md w-full">
-                <label className="text-xs font-semibold text-green-300 mb-1">Deposit Amount</label>
-                <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-green-200 p-3 rounded-md border-none focus:ring-2 focus:ring-green-400 transition-all text-lg font-bold" placeholder="Enter deposit amount" />
+
+            {/* Header Section */}
+            <div className="flex flex-col items-center mb-6 z-10">
+              <div className="mb-4">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center shadow-2xl animate-bounce">
+                  <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                  </svg>
+                </div>
+              </div>
+              <span className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-green-400 mb-3 animate-pulse">💰 DEPOSIT</span>
+              <span className="text-2xl font-bold text-emerald-200 mb-2 text-center">Adding funds to your trading account</span>
+              <span className="text-lg text-emerald-300/80 italic text-center">Keep building your capital for bigger opportunities!</span>
+            </div>
+
+            {/* Title Input Section */}
+            <div className="flex justify-center w-full z-10 mb-6">
+              <div className="flex flex-col gap-2 w-full max-w-lg">
+                <label className="text-xl font-bold text-emerald-300 text-center">Title (Optional)</label>
+                <input 
+                  name="title" 
+                  type="text" 
+                  value={form.title} 
+                  onChange={handleChange} 
+                  className="w-full bg-emerald-950/60 text-emerald-100 rounded-xl p-3 border-2 border-emerald-600/50 text-lg shadow-xl focus:ring-2 focus:ring-emerald-400/50 transition-all" 
+                  placeholder="Short title for this deposit..." 
+                />
+              </div>
+            </div>
+            
+            {/* Amount Input Section */}
+            <div className="flex justify-center w-full z-10">
+              <div className="flex flex-col gap-6 w-full max-w-lg">
+                <label className="text-2xl font-bold text-emerald-300 text-center">Deposit Amount</label>
+                <div className="relative">
+                  <div className="absolute left-6 top-1/2 transform -translate-y-1/2 text-4xl font-black text-emerald-400">$</div>
+                  <input 
+                    name="pnl" 
+                    type="number" 
+                    step="0.01" 
+                    value={form.pnl} 
+                    onChange={handleChange} 
+                    onWheel={(e) => e.target.blur()} 
+                    className="w-full bg-emerald-950/60 text-emerald-100 rounded-2xl pl-16 pr-8 py-6 border-3 border-emerald-600/50 text-4xl font-black text-center shadow-2xl focus:ring-4 focus:ring-emerald-400/50 focus:border-emerald-400 transition-all duration-300 placeholder-emerald-400/50" 
+                    placeholder="0.00" 
+                  />
+                </div>
+                <div className="text-center">
+                  <div className="inline-flex items-center gap-2 bg-emerald-900/40 px-4 py-2 rounded-full border border-emerald-600/30">
+                    <span className="text-emerald-300 text-sm font-semibold">💪 Building Capital</span>
+                  </div>
+                </div>
               </div>
             </div>
           </motion.div>
         ) : entryType === 'payout' ? (
-          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className="relative bg-neutral-900/90 rounded-2xl px-4 py-6 mb-2 shadow-xl border border-blue-700/40 flex flex-col items-center gap-4">
-            <div className="flex flex-col items-center mb-2">
-              <span className="text-2xl font-extrabold text-blue-300 mb-1">Payout</span>
-              <span className="text-base font-semibold text-blue-200 mb-2">Congrats on your payout!</span>
-              <span className="text-xs text-blue-400 italic">Reward yourself for your discipline.</span>
+          <motion.div 
+            initial={{ opacity: 0, y: 50, scale: 0.95 }} 
+            animate={{ opacity: 1, y: 0, scale: 1 }} 
+            transition={{ duration: 0.8, type: "spring" }}
+            className="relative bg-gradient-to-br from-orange-900/60 via-red-900/40 to-black/60 backdrop-blur-xl rounded-3xl mx-2 my-4 p-8 shadow-2xl border-2 border-orange-400/30 flex flex-col items-center gap-8 min-h-[500px] overflow-hidden"
+          >
+            {/* Celebration animation elements */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <div className="absolute top-8 left-8 w-6 h-6 bg-yellow-400 rounded-full animate-ping"></div>
+              <div className="absolute top-20 right-12 w-4 h-4 bg-orange-400 rounded-full animate-ping" style={{animationDelay: '1s'}}></div>
+              <div className="absolute bottom-16 left-16 w-8 h-8 bg-red-400 rounded-full animate-ping" style={{animationDelay: '2s'}}></div>
+              <div className="absolute top-32 right-20 w-3 h-3 bg-yellow-300 rounded-full animate-ping" style={{animationDelay: '0.5s'}}></div>
+              <div className="absolute bottom-32 right-8 w-5 h-5 bg-orange-300 rounded-full animate-ping" style={{animationDelay: '1.5s'}}></div>
             </div>
-            <div className="flex justify-center w-full">
-              <div className="flex flex-col gap-2 max-w-md w-full">
-                <label className="text-xs font-semibold text-blue-300 mb-1">Payout Amount</label>
-                <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-blue-200 p-3 rounded-md border-none focus:ring-2 focus:ring-blue-400 transition-all text-lg font-bold" placeholder="Enter payout amount" />
+
+            {/* Header Section */}
+            <div className="flex flex-col items-center mb-6 z-10">
+              <div className="mb-4 relative">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500 flex items-center justify-center shadow-2xl animate-bounce">
+                  <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"/>
+                  </svg>
+                </div>
+                <div className="absolute -top-2 -right-2 w-8 h-8 bg-yellow-400 rounded-full animate-pulse flex items-center justify-center">
+                  <span className="text-xl">🎉</span>
+                </div>
+              </div>
+              <span className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-orange-400 to-red-400 mb-3 animate-pulse">🎉 PAYOUT!</span>
+              <span className="text-2xl font-bold text-orange-200 mb-2 text-center">Congratulations on your success!</span>
+              <span className="text-lg text-orange-300/80 italic text-center">Time to reward yourself for your discipline and skill!</span>
+            </div>
+
+            {/* Title Input Section */}
+            <div className="flex justify-center w-full z-10 mb-6">
+              <div className="flex flex-col gap-2 w-full max-w-lg">
+                <label className="text-xl font-bold text-orange-300 text-center">Title (Optional)</label>
+                <input 
+                  name="title" 
+                  type="text" 
+                  value={form.title} 
+                  onChange={handleChange} 
+                  className="w-full bg-orange-950/60 text-orange-100 rounded-xl p-3 border-2 border-orange-600/50 text-lg shadow-xl focus:ring-2 focus:ring-orange-400/50 transition-all" 
+                  placeholder="Short title for this payout..." 
+                />
+              </div>
+            </div>
+            
+            {/* Amount Input Section */}
+            <div className="flex justify-center w-full z-10">
+              <div className="flex flex-col gap-6 w-full max-w-lg">
+                <label className="text-2xl font-bold text-orange-300 text-center">Payout Amount</label>
+                <div className="relative">
+                  <div className="absolute left-6 top-1/2 transform -translate-y-1/2 text-4xl font-black text-orange-400">$</div>
+                  <input 
+                    name="pnl" 
+                    type="number" 
+                    step="0.01" 
+                    value={form.pnl} 
+                    onChange={handleChange} 
+                    onWheel={(e) => e.target.blur()} 
+                    className="w-full bg-orange-950/60 text-orange-100 rounded-2xl pl-16 pr-8 py-6 border-3 border-orange-600/50 text-4xl font-black text-center shadow-2xl focus:ring-4 focus:ring-orange-400/50 focus:border-orange-400 transition-all duration-300 placeholder-orange-400/50 animate-pulse" 
+                    placeholder="0.00" 
+                  />
+                </div>
+                <div className="text-center">
+                  <div className="inline-flex items-center gap-2 bg-orange-900/40 px-4 py-2 rounded-full border border-orange-600/30 animate-bounce">
+                    <span className="text-orange-300 text-sm font-semibold">🏆 Well Earned!</span>
+                  </div>
+                </div>
               </div>
             </div>
           </motion.div>
@@ -331,7 +443,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
             {(entryType === 'trade' || entryType === 'tape') && (
               <div className="bg-neutral-900/90 rounded-xl mx-4 mb-4 border border-neutral-700 overflow-hidden">
                 <div className="p-4 border-b border-neutral-700 bg-neutral-800/50">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <CameraIcon className="w-5 h-5 text-blue-400" />
                       <span className="text-base font-bold text-[#e5e5e5]">Screenshots</span>
@@ -341,21 +453,27 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                         </span>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current.click()}
-                      className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg transition-all"
-                    >
-                      Add Images
-                    </button>
+                    {/* Title field inline */}
+                    <div className="flex items-center gap-2 flex-1 max-w-md">
+                      <label className="text-xs font-semibold text-neutral-400 whitespace-nowrap">Title:</label>
+                      <input 
+                        name="title" 
+                        type="text" 
+                        value={form.title} 
+                        onChange={handleChange} 
+                        className="flex-1 bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-sm" 
+                        placeholder={entryType === 'tape' ? "Title for tape reading..." : "Title for trade..."} 
+                      />
+                    </div>
                   </div>
                 </div>
                 
                 <div 
-                  className="p-4 min-h-[80px] border-2 border-dashed border-neutral-600 hover:border-blue-500 transition-colors"
+                  className="p-4 min-h-[80px] border-2 border-dashed border-neutral-600 hover:border-blue-500 transition-colors cursor-pointer"
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
+                  onClick={() => fileInputRef.current.click()}
                 >
                   <input
                     ref={fileInputRef}
@@ -369,8 +487,8 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                   {screenshots.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-center">
                       <div>
-                        <div className="text-neutral-400 text-sm mb-2">Drag & drop images here</div>
-                        <div className="text-neutral-500 text-xs">or click "Add Images" above</div>
+                        <div className="text-neutral-400 text-sm mb-2">Click here to add images</div>
+                        <div className="text-neutral-500 text-xs">or drag & drop images</div>
                       </div>
                     </div>
                   ) : (
@@ -385,8 +503,11 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                             />
                             <button 
                               type="button" 
-                              onClick={() => handleRemoveScreenshot(idx)} 
-                              className="absolute -top-2 -right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation(); // Prevent triggering the image picker
+                                handleRemoveScreenshot(idx);
+                              }} 
+                              className="absolute top-0 right-0 bg-red-600 hover:bg-red-700 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs font-bold shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
                               title="Remove image"
                             >
                               ×
@@ -524,7 +645,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
               <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
                 <div className="flex items-center gap-3 mb-3">
                   <DocumentTextIcon className="w-6 h-6 text-blue-300" />
-                  <div className="text-base font-bold text-[#e5e5e5]">Notes</div>
+                  <div className="text-base font-bold text-[#e5e5e5]">{entryType === 'tape' ? 'Tape Reading' : 'Notes'}</div>
                 </div>
                 <div className="flex flex-col">
                   <label className="text-sm font-semibold text-blue-400 mb-2">Notes</label>
@@ -533,7 +654,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
                     value={form.notes} 
                     onChange={handleChange} 
                     className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all resize-none h-32" 
-                    placeholder="Enter your trade notes here..."
+                    placeholder={entryType === 'tape' ? "Enter your tape reading notes here..." : "Enter your trade notes here..."}
                   />
                 </div>
               </motion.div>

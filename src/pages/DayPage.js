@@ -97,9 +97,11 @@ const DayPage = () => {
   // Calculate initialAccountBalance for the next entry
   let initialAccountBalance = "";
   if (entries.length > 0) {
-    const last = entries[entries.length - 1];
-    // Use the account balance from the last entry directly
-    initialAccountBalance = (Number(last.accountBalance) || 0).toFixed(2);
+    // Since entries are sorted newest first, entries[0] is the most recent entry chronologically
+    const mostRecent = entries[0];
+    // Use the account balance from the most recent entry directly
+    initialAccountBalance = (Number(mostRecent.accountBalance) || 0).toFixed(2);
+    console.log('🏦 DayPage: Initial balance for new entry:', initialAccountBalance, 'from entry:', mostRecent.created);
   }
 
   const handleAddEntry = async (savedEntry) => {

@@ -4,6 +4,7 @@ import { UserContext } from "../App";
 
 export default function DepositPage() {
   const { currentUser, selectedAccount } = useContext(UserContext);
+  const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -30,6 +31,7 @@ export default function DepositPage() {
       const now = new Date();
       const newBal = lastBal + Number(amount);
       await addDoc(entriesCol, {
+        title,
         pnl: Number(amount), // Store deposit amount in pnl field for consistency
         notes,
         created: now.toISOString(),
@@ -92,6 +94,18 @@ export default function DepositPage() {
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="p-12 space-y-10">
+              {/* Title Input */}
+              <div className="space-y-4">
+                <label className="block text-xl font-bold text-emerald-300 text-center">Title (Optional)</label>
+                <input
+                  type="text"
+                  className="w-full bg-emerald-950/60 text-emerald-100 rounded-2xl p-6 border-2 border-emerald-600/50 text-lg shadow-xl focus:ring-4 focus:ring-emerald-400/50 focus:border-emerald-400 transition-all duration-300 placeholder-emerald-400/50"
+                  placeholder="Short title for this deposit..."
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                />
+              </div>
+              
               {/* Amount Input */}
               <div className="space-y-4">
                 <label className="block text-2xl font-bold text-emerald-300 text-center">Deposit Amount</label>

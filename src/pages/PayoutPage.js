@@ -4,6 +4,7 @@ import { UserContext } from "../App";
 
 export default function PayoutPage() {
   const { currentUser, selectedAccount } = useContext(UserContext);
+  const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -30,6 +31,7 @@ export default function PayoutPage() {
       const now = new Date();
       const newBal = lastBal - Number(amount);
       await addDoc(entriesCol, {
+        title,
         pnl: -Number(amount), // Store payout amount as negative in pnl field for consistency
         notes,
         created: now.toISOString(),
@@ -105,6 +107,18 @@ export default function PayoutPage() {
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="p-12 space-y-10">
+              {/* Title Input */}
+              <div className="space-y-4">
+                <label className="block text-xl font-bold text-orange-300 text-center">Title (Optional)</label>
+                <input
+                  type="text"
+                  className="w-full bg-orange-950/60 text-orange-100 rounded-2xl p-6 border-2 border-orange-600/50 text-lg shadow-xl focus:ring-4 focus:ring-orange-400/50 focus:border-orange-400 transition-all duration-300 placeholder-orange-400/50"
+                  placeholder="Short title for this payout..."
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                />
+              </div>
+              
               {/* Amount Input */}
               <div className="space-y-4">
                 <label className="block text-2xl font-bold text-orange-300 text-center">Payout Amount</label>

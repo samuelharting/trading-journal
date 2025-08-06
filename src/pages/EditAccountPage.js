@@ -12,6 +12,7 @@ const EditAccountPage = () => {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentBalance, setCurrentBalance] = useState("");
+  const [originalBalance, setOriginalBalance] = useState(0); // Store original calculated balance
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -51,6 +52,7 @@ const EditAccountPage = () => {
           }
           // Tape reading entries don't affect balance
         });
+        setOriginalBalance(balance); // Store the original calculated balance
         setCurrentBalance(balance.toFixed(2));
       }
       setLoading(false);
@@ -63,20 +65,32 @@ const EditAccountPage = () => {
     setSaving(true);
     
     try {
-      // Add a new deposit entry to correct the balance
+      const newBalance = parseFloat(currentBalance);
+      const correctionAmount = newBalance - originalBalance; // Calculate the difference
+      
+      // Only create a correction entry if there's actually a difference
+      if (Math.abs(correctionAmount) < 0.01) {
+        // No significant change, just go back
+        navigate('/summary');
+        return;
+      }
+      
+      // Add a new deposit/withdrawal entry to correct the balance
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-      const correctionAmount = parseFloat(currentBalance);
       await addDoc(entriesCol, {
-        pnl: correctionAmount, // Store the correction amount in pnl field
-        notes: "Account balance correction",
+        pnl: correctionAmount, // Store the correction amount (positive for deposit, negative for withdrawal)
+        notes: `Account balance correction (${correctionAmount > 0 ? '+' : ''}${correctionAmount.toFixed(2)})`,
         created: new Date().toISOString(),
-        isDeposit: true,
-        accountBalance: correctionAmount, // Set the final balance
+        isDeposit: correctionAmount > 0, // Deposit if positive correction
+        isPayout: correctionAmount < 0,  // Payout if negative correction
+        accountBalance: newBalance, // Set the final balance
         year: String(new Date().getFullYear()),
         month: String(new Date().getMonth() + 1),
         day: String(new Date().getDate())
       });
       
+      // Small delay to ensure Firestore write is complete before navigating
+      await new Promise(resolve => setTimeout(resolve, 500));
       navigate('/summary');
     } catch (error) {
       console.error('Error updating account balance:', error);
@@ -138,20 +152,34 @@ const EditAccountPage = () => {
             </div>
 
             <div className="bg-neutral-900/50 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-[#e5e5e5] mb-2">Instructions</h3>
+              <h3 className="text-lg font-semibold text-[#e5e5e5] mb-2">Balance Correction</h3>
+              {currentBalance && (
+                <div className="mb-3 space-y-1">
+                  <div className="text-sm text-neutral-400">Original calculated balance: <span className="text-[#e5e5e5] font-mono">${originalBalance.toFixed(2)}</span></div>
+                  <div className="text-sm text-neutral-400">New balance: <span className="text-[#e5e5e5] font-mono">${parseFloat(currentBalance || 0).toFixed(2)}</span></div>
+                  <div className="text-sm font-semibold">
+                    Correction: 
+                    <span className={`font-mono ml-1 ${(parseFloat(currentBalance || 0) - originalBalance) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {(parseFloat(currentBalance || 0) - originalBalance) >= 0 ? '+' : ''}
+                      ${(parseFloat(currentBalance || 0) - originalBalance).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
               <p className="text-sm text-neutral-400">
-                Enter your current account balance. This will create a new deposit entry to correct your account balance.
-                All future trades will be calculated from this new balance.
+                This will create a {(parseFloat(currentBalance || 0) - originalBalance) >= 0 ? 'deposit' : 'withdrawal'} entry to match your actual account balance.
               </p>
             </div>
 
             <div className="flex gap-4 pt-4">
               <button
                 onClick={handleSave}
-                disabled={saving || !currentBalance}
+                disabled={saving || !currentBalance || Math.abs(parseFloat(currentBalance || 0) - originalBalance) < 0.01}
                 className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition-all"
               >
-                {saving ? 'Saving...' : 'Save Changes'}
+                {saving ? 'Saving...' : 
+                 Math.abs(parseFloat(currentBalance || 0) - originalBalance) < 0.01 ? 'No Change Needed' : 
+                 'Apply Correction'}
               </button>
               <button
                 onClick={() => navigate('/summary')}

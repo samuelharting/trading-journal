@@ -1,20 +1,20 @@
-import React, { useEffect, useState, useContext } from "react";
-import { motion } from "framer-motion";
+import React, { useEffect, useState, useContext, useCallback } from "react";
+// Removed framer-motion for minimalistic design
 import {
   CurrencyDollarIcon,
   ChartBarIcon,
   CalendarIcon,
   BoltIcon,
-  ArrowTrendingUpIcon
+  ArrowTrendingUpIcon,
+  PencilIcon
 } from "@heroicons/react/24/outline";
 import { UserContext } from "../App";
 import { db } from '../firebase';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
-import GlitchTitle from '../components/GlitchTitle';
+
 import StatCard from '../components/StatCard';
 import CircleCard from '../components/CircleCard';
-import Gauge from '../components/Gauge';
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, defs, linearGradient, stop } from 'recharts';
 
@@ -108,8 +108,38 @@ function getEquityCurve(entries) {
     return new Date();
   };
 
-  // Sort entries by date using year/month/day fields
-  const sorted = [...entries].sort((a, b) => getEntryDate(a) - getEntryDate(b));
+  // Sort entries chronologically - using created timestamp as primary sort
+  const sorted = [...entries].sort((a, b) => {
+    const getTimestamp = (entry) => {
+      if (entry.created) {
+        // Handle format: "2025-01-06T03:43:47.677Z-u38k53"
+        // Find the last dash and split there to separate ISO string from random suffix
+        const lastDashIndex = entry.created.lastIndexOf('-');
+        if (lastDashIndex > 10) { // Make sure it's not a date dash
+          const isoString = entry.created.substring(0, lastDashIndex);
+          return new Date(isoString).getTime();
+        } else {
+          // Fallback: try parsing the whole string
+          return new Date(entry.created).getTime();
+        }
+      }
+      // Fallback to date fields
+      if (entry.year && entry.month && entry.day) {
+        const year = parseInt(entry.year, 10);
+        const month = parseInt(entry.month, 10) - 1;
+        const day = parseInt(entry.day, 10);
+        return new Date(year, month, day).getTime();
+      }
+      return 0;
+    };
+    
+    const timestampA = getTimestamp(a);
+    const timestampB = getTimestamp(b);
+    
+    console.log(`📅 Sorting: ${a.created} (${new Date(timestampA).toISOString()}) vs ${b.created} (${new Date(timestampB).toISOString()})`);
+    
+    return timestampA - timestampB;
+  });
   
   let curve = [];
   let balance = 0; // Start from 0 balance
@@ -119,59 +149,71 @@ function getEquityCurve(entries) {
   curve.push(balance);
   points.push({ x: 0, y: balance, date: 'Start' });
   
+  console.log('📈 getEquityCurve: Processing entries in chronological order:');
+  
   sorted.forEach((e, i) => {
-    let pnl = 0;
-    let affectsBalance = true;
+    const prevBal = balance;
+    const entryDate = e.created ? new Date(e.created.split('-')[0]).toLocaleString() : 'Unknown';
+    
+    // Process each entry type and update balance
+    let entryType = '';
+    let displayPnl = 0;
+    let shouldAddToCurve = false;
     
     if (e.isDeposit) {
-      // For deposits, use the stored accountBalance directly (don't double-count)
-      if (e.accountBalance && !isNaN(Number(e.accountBalance))) {
-        balance = Number(e.accountBalance);
-        affectsBalance = false; // Already set balance directly
-      } else {
-        // Fallback: use deposit amount
-        pnl = Number(e.pnl) || 0;
-      }
+      const depositAmount = Number(e.pnl) || 0;
+      balance += depositAmount;
+      entryType = 'Deposit';
+      displayPnl = depositAmount;
+      shouldAddToCurve = true;
+      console.log(`  ${i + 1}. DEPOSIT [${entryDate}]: +$${depositAmount} → $${prevBal} + $${depositAmount} = $${balance}`);
     } else if (e.isPayout) {
-      // For payouts, use the stored accountBalance directly (don't double-count)
-      if (e.accountBalance && !isNaN(Number(e.accountBalance))) {
-        balance = Number(e.accountBalance);
-        affectsBalance = false; // Already set balance directly
-      } else {
-        // Fallback: use payout amount (already negative)
-        pnl = Number(e.pnl) || 0;
-      }
-    } else if (!e.isTapeReading) {
-      // For trades, use the P&L - affects both balance and equity curve
-      pnl = Number(e.pnl) || 0;
+      const payoutAmount = Number(e.pnl) || 0; // This should already be negative
+      balance += payoutAmount; // Adding a negative number subtracts it
+      entryType = 'Payout';
+      displayPnl = Math.abs(payoutAmount); // Show positive amount for display
+      shouldAddToCurve = true;
+      console.log(`  ${i + 1}. PAYOUT [${entryDate}]: ${payoutAmount} → $${prevBal} + (${payoutAmount}) = $${balance}`);
+    } else if (!e.tapeReading && !e.isTapeReading) {
+      const tradePnl = Number(e.pnl) || 0;
+      balance += tradePnl;
+      entryType = 'Trade';
+      displayPnl = tradePnl;
+      shouldAddToCurve = true;
+      console.log(`  ${i + 1}. TRADE [${entryDate}]: ${tradePnl >= 0 ? '+' : ''}$${tradePnl} → $${prevBal} + $${tradePnl} = $${balance}`);
     } else {
-      // Tape reading entries don't affect balance or equity curve
-      affectsBalance = false;
+      console.log(`  ${i + 1}. TAPE READING [${entryDate}]: ignored (no P&L impact)`);
     }
     
-    // Update balance for all entries that affect it
-    if (affectsBalance) {
-      balance = Math.round((balance + pnl) * 100) / 100;
-    }
+    // Round to avoid floating point precision issues
+    balance = Math.round(balance * 100) / 100;
     
-    // Only add points to equity curve for trades (not deposits, payouts, or tape reading)
-    if (!e.isDeposit && !e.isPayout && !e.isTapeReading) {
+    // Add point to equity curve for each balance-affecting entry
+    if (shouldAddToCurve) {
       curve.push(balance);
       
-      // Create a meaningful label for the point
-      const entryDate = getEntryDate(e);
+      // Create detailed point data
+      const entryDate = e.created ? new Date(e.created.split('-')[0]) : new Date();
       const dateLabel = entryDate.toLocaleDateString();
+      const timeLabel = entryDate.toLocaleTimeString();
       
       points.push({ 
         x: points.length, 
         y: balance, 
         date: dateLabel,
-        type: 'Trade',
-        pnl: pnl,
-        ticker: e.tickerTraded || ''
+        time: timeLabel,
+        type: entryType,
+        pnl: displayPnl,
+        ticker: e.tickerTraded || '',
+        title: e.title || '',
+        accountBalance: balance // Explicitly store the account balance at this point
       });
+      
+      console.log(`  📊 Added curve point: ${entryType} → Balance: ${balance}`);
     }
   });
+  
+  console.log('📈 getEquityCurve: Final balance:', balance, 'Curve points:', points.length);
   
   return { curve, points };
 }
@@ -268,33 +310,32 @@ function getWeekNumber(d) {
   return weekNo;
 }
 
-// Animated number counter
-const AnimatedNumber = ({ value, decimals = 2, className = "" }) => {
-  const [display, setDisplay] = useState(0);
-  useEffect(() => {
-    let start = display;
-    let end = value;
-    if (start === end) return;
-    let raf;
-    const step = () => {
-      start += (end - start) * 0.2;
-      if (Math.abs(end - start) < 0.01) start = end;
-      setDisplay(Number(start.toFixed(decimals)));
-      if (start !== end) raf = requestAnimationFrame(step);
-    };
-    step();
-    return () => raf && cancelAnimationFrame(raf);
-    // eslint-disable-next-line
-  }, [value]);
-  return <span className={className}>{display.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}</span>;
+// Simple static number display - no animations
+const StaticNumber = ({ value, decimals = 2, className = "" }) => {
+  return <span className={className}>{value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}</span>;
+};
+
+// Helper function to parse created timestamp correctly
+const parseCreatedDate = (entry) => {
+  if (entry.created) {
+    const lastDashIndex = entry.created.lastIndexOf('-');
+    if (lastDashIndex > 10) { // Make sure it's not a date dash
+      const isoString = entry.created.substring(0, lastDashIndex);
+      return new Date(isoString);
+    } else {
+      return new Date(entry.created);
+    }
+  }
+  // Fallback to constructed date from year/month/day fields
+  if (entry.year && entry.month && entry.day) {
+    return new Date(entry.year, entry.month - 1, entry.day);
+  }
+  return new Date(); // Last resort
 };
 
 const iconClass = "w-6 h-6 inline-block mr-2 text-blue-400 align-middle";
 
-const sectionVariants = {
-  hidden: { opacity: 0, y: 40 },
-  visible: (i) => ({ opacity: 1, y: 0, transition: { delay: i * 0.12, duration: 0.5 } })
-};
+// Removed animation variants for minimalistic design
 
 function formatDurationMins(mins) {
   if (!mins || isNaN(mins)) return '';
@@ -322,70 +363,39 @@ function EquityCurveChart({ points }) {
     maxY + padding
   ];
   
-  return (
-    <ResponsiveContainer width="100%" height={320}>
-      <AreaChart data={points} margin={{ top: 24, right: 24, left: 60, bottom: 0 }}>
-        <defs>
-          <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10B981" stopOpacity={0.8} />
-            <stop offset="50%" stopColor="#3B82F6" stopOpacity={0.6} />
-            <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0.1} />
-          </linearGradient>
-          <linearGradient id="equityStroke" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#10B981" />
-            <stop offset="50%" stopColor="#3B82F6" />
-            <stop offset="100%" stopColor="#8B5CF6" />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+    return (
+    <ResponsiveContainer width="100%" height={280}>
+      <AreaChart data={points} margin={{ top: 20, right: 20, left: 50, bottom: 20 }}>
         <XAxis 
           dataKey="x" 
-          tick={{ fill: '#e5e5e5', fontSize: 12, fontWeight: 500 }} 
+          tick={{ fill: '#9CA3AF', fontSize: 11 }} 
           hide 
         />
         <YAxis 
-          tick={{ fill: '#e5e5e5', fontSize: 12, fontWeight: 500 }} 
-          width={60} 
+          tick={{ fill: '#9CA3AF', fontSize: 11 }} 
+          width={50} 
           domain={yDomain}
           tickFormatter={(value) => `$${value.toFixed(0)}`}
         />
         <Tooltip 
-          contentStyle={{ 
-            background: 'rgba(31, 41, 55, 0.95)', 
-            border: '1px solid rgba(255, 255, 255, 0.1)', 
-            color: '#e5e5e5', 
-            borderRadius: 12,
-            backdropFilter: 'blur(10px)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          contentStyle={{
+            background: '#1F2937', 
+            border: '1px solid #374151', 
+            color: '#E5E7EB', 
+            borderRadius: 6,
+            fontSize: 12
           }} 
-          labelFormatter={(value, payload) => {
-            if (payload && payload[0] && payload[0].payload) {
-              const point = payload[0].payload;
-              return `${point.type} - ${point.date}`;
-            }
-            return `Entry #${value}`;
-          }}
-          formatter={(value, name, props) => {
-            const point = props.payload;
-            return [
-              `$${value.toFixed(2)}`, 
-              'Balance',
-              point.pnl !== undefined ? `P&L: ${point.pnl > 0 ? '+' : ''}$${point.pnl.toFixed(2)}` : '',
-              point.ticker ? `Ticker: ${point.ticker}` : ''
-            ].filter(Boolean);
-          }}
+          formatter={(value) => [`$${value.toFixed(2)}`, 'Balance']}
         />
         <Area 
           type="monotone" 
           dataKey="y" 
-          stroke="url(#equityStroke)" 
-          fillOpacity={1} 
-          fill="url(#equityGradient)" 
-          strokeWidth={3} 
-          dot={{ r: 4, fill: '#3B82F6', stroke: '#fff', strokeWidth: 2 }} 
-          isAnimationActive={true} 
-          animationDuration={400}
-          animationEasing="ease-out"
+          stroke="#3B82F6" 
+          fill="#3B82F6" 
+          fillOpacity={0.1} 
+          strokeWidth={2} 
+          dot={{ r: 4, fill: '#60A5FA', stroke: '#ffffff', strokeWidth: 2 }} 
+          isAnimationActive={false}
         />
       </AreaChart>
     </ResponsiveContainer>
@@ -584,24 +594,61 @@ const SummaryPage = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const fetchEntries = useCallback(async () => {
     if (!currentUser || !selectedAccount) return;
-    const fetchEntries = async () => {
-      setLoading(true);
+    console.log('🔄 SummaryPage: Fetching entries for:', selectedAccount.name);
+    setLoading(true);
+    try {
       const { db } = await import('../firebase');
       const { collection, getDocs } = await import('firebase/firestore');
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       const snap = await getDocs(entriesCol);
-      const data = snap.docs.map(doc => doc.data());
+      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      
+      console.log('📊 SummaryPage: Retrieved entries:', data.length);
+      console.log('📊 SummaryPage: Sample entries:', data.slice(0, 3));
+      
       setEntries(data);
-      setStats(getStats(data));
-      setCurveData(getEquityCurve(data));
+      const statsResult = getStats(data);
+      const curveResult = getEquityCurve(data);
+      
+      console.log('📈 SummaryPage: Stats result:', statsResult);
+      console.log('📈 SummaryPage: Curve result:', curveResult);
+      
+      setStats(statsResult);
+      setCurveData(curveResult);
       setStreaks(getStreaks(data));
       setDailyPnl(getDailyPnl(data));
-      setLoading(false);
-    };
-    fetchEntries();
+    } catch (error) {
+      console.error('❌ SummaryPage: Error fetching entries:', error);
+    }
+    setLoading(false);
   }, [currentUser, selectedAccount]);
+
+  useEffect(() => {
+    fetchEntries();
+  }, [fetchEntries]);
+
+  // Refetch data when window/tab becomes visible (e.g., navigating back from edit page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchEntries();
+      }
+    };
+
+    const handleFocus = () => {
+      fetchEntries();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [fetchEntries]);
 
 
 
@@ -618,6 +665,8 @@ const SummaryPage = () => {
 
   // Compute current account balance
   let currentBalance = "0.00";
+  console.log('💰 SummaryPage: Computing balance for', entries.length, 'entries');
+  
   if (entries.length > 0) {
     // Helper function to get entry date using year/month/day fields (consistent with other functions)
     const getEntryDate = (entry) => {
@@ -636,37 +685,65 @@ const SummaryPage = () => {
       return new Date();
     };
 
-    const sorted = [...entries].sort((a, b) => getEntryDate(a) - getEntryDate(b));
+    // Sort entries chronologically - using created timestamp as primary sort
+    const sorted = [...entries].sort((a, b) => {
+      const getTimestamp = (entry) => {
+        if (entry.created) {
+          const timestamp = entry.created.split('-')[0]; // Remove random suffix
+          return new Date(timestamp).getTime();
+        }
+        // Fallback to date fields
+        if (entry.year && entry.month && entry.day) {
+          const year = parseInt(entry.year, 10);
+          const month = parseInt(entry.month, 10) - 1;
+          const day = parseInt(entry.day, 10);
+          return new Date(year, month, day).getTime();
+        }
+        return 0;
+      };
+      return getTimestamp(a) - getTimestamp(b);
+    });
+    
     let bal = 0;
-    sorted.forEach(e => {
+    
+    console.log('💰 SummaryPage: Processing entries in chronological order:');
+    sorted.forEach((e, index) => {
+      const prevBal = bal;
+      const entryDate = e.created ? new Date(e.created.split('-')[0]).toLocaleString() : 'Unknown';
+      
       if (e.isDeposit) {
-        // For deposits, add the deposit amount to the current balance
+        // For deposits, just add the pnl amount (don't use stored accountBalance as it might be wrong)
         bal += Number(e.pnl) || 0;
+        console.log(`  ${index + 1}. DEPOSIT [${entryDate}]: ${e.pnl} → ${prevBal} + ${e.pnl} = ${bal}`);
       } else if (e.isPayout) {
-        // For payouts, add the payout amount (pnl is stored as negative)
-        bal += Number(e.pnl) || 0; // pnl is already negative for payouts
+        // For payouts, subtract the amount (pnl should already be negative)
+        bal += Number(e.pnl) || 0;
+        console.log(`  ${index + 1}. PAYOUT [${entryDate}]: ${e.pnl} → ${prevBal} + ${e.pnl} = ${bal}`);
       } else if (!e.isTapeReading) {
         // For trades, add the P&L to the previous balance
         bal += Number(e.pnl) || 0;
+        console.log(`  ${index + 1}. TRADE [${entryDate}]: ${e.pnl} → ${prevBal} + ${e.pnl} = ${bal}`);
+      } else {
+        console.log(`  ${index + 1}. TAPE READING [${entryDate}]: ignored`);
       }
       // Tape reading entries don't affect balance
     });
     // Round to 2 decimal places to avoid floating point precision issues
-    currentBalance = (Math.round(bal * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const finalBalance = Math.round(bal * 100) / 100;
+    currentBalance = finalBalance.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    console.log('💰 SummaryPage: Final calculated balance:', finalBalance, '→ Formatted:', currentBalance);
+  } else {
+    console.log('💰 SummaryPage: No entries found, balance remains 0.00');
   }
 
   // Calculate percentage changes (trading only, excluding deposits/payouts)
   const percentageChanges = getPercentageChanges(entries, currentBalance);
   
-  // Debug logging for percentage calculations
-  if (percentageChanges) {
-    console.log('Percentage Changes Debug:', {
-      day: { pnl: percentageChanges.day.pnl, percentage: percentageChanges.day.percentage, startBalance: percentageChanges.day.startBalance },
-      week: { pnl: percentageChanges.week.pnl, percentage: percentageChanges.week.percentage, startBalance: percentageChanges.week.startBalance },
-      month: { pnl: percentageChanges.month.pnl, percentage: percentageChanges.month.percentage, startBalance: percentageChanges.month.startBalance },
-      year: { pnl: percentageChanges.year.pnl, percentage: percentageChanges.year.percentage, startBalance: percentageChanges.year.startBalance }
-    });
-  }
+  // Final summary
+  console.log('🎯 SummaryPage: CALCULATION COMPLETE');
+  console.log('🎯 Balance Display:', currentBalance);
+  console.log('🎯 Equity Curve Points:', curveData?.points?.length || 0);
+  console.log('==========================================');
 
   // Find the most recent day, week, and month
   const mostRecentDay = dailyRows.length > 0 ? dailyRows[0] : null;
@@ -815,25 +892,11 @@ const SummaryPage = () => {
       ) : !stats ? (
         <div className="text-neutral-500">No data yet.</div>
       ) : (
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={{}}
-          className="w-full flex flex-col gap-6"
-        >
+        <div className="w-full flex flex-col gap-6">
           {/* --- TOP PRIORITY SECTION: Day/Week/Month P&L + Account Balance --- */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 w-full">
             {/* Day P&L */}
-            <motion.div 
-              custom={0} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(16, 185, 129, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
-            >
+            <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center">
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Today's P&L</div>
               {percentageChanges ? (
                 <>
@@ -845,18 +908,15 @@ const SummaryPage = () => {
                   </div>
                 </>
               ) : <div className="text-neutral-500 text-sm">No trades today</div>}
-            </motion.div>
+            </div>
             
             {/* Week P&L */}
-            <motion.div 
-              custom={1} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">This Week</div>
               {percentageChanges ? (
@@ -869,18 +929,15 @@ const SummaryPage = () => {
                   </div>
                 </>
               ) : <div className="text-neutral-500 text-sm">No trades this week</div>}
-            </motion.div>
+            </div>
             
             {/* Month P&L */}
-            <motion.div 
-              custom={2} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(139, 92, 246, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">This Month</div>
               {percentageChanges ? (
@@ -899,18 +956,15 @@ const SummaryPage = () => {
                 </>
               )}
               <div className="text-xs text-neutral-500 mt-1">{now.toLocaleString('default', { month: 'short' })} {currentYear}</div>
-            </motion.div>
+            </div>
             
             {/* YTD Performance */}
-            <motion.div 
-              custom={3} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(16, 185, 129, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">YTD Performance</div>
               {percentageChanges ? (
@@ -929,19 +983,14 @@ const SummaryPage = () => {
                 </>
               )}
               <div className="text-xs text-neutral-500 mt-1">{currentYear}</div>
-            </motion.div>
+            </div>
           </div>
 
           {/* --- EQUITY CURVE SECTION --- */}
-          <motion.div 
-            custom={4} 
-            variants={sectionVariants} 
-            whileHover={{ scale: 1.01, boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.2)' }} 
-            className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-8 flex flex-col gap-4 shadow-2xl relative overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-            }}
+          <div 
+             
+             
+            className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col gap-4"
           >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -950,18 +999,28 @@ const SummaryPage = () => {
               </div>
               <div className="text-right">
                 <div className="text-sm font-light text-neutral-400 uppercase tracking-wider">Account Balance</div>
-                <div className="text-xl font-bold text-[#10B981]">{currentBalance}</div>
+                <div className="flex items-center justify-end gap-2">
+                  <div className="text-xl font-bold text-[#10B981]">{currentBalance}</div>
+                  <button
+                    onClick={() => navigate('/edit-account')}
+                    className="p-1 text-neutral-400 hover:text-[#10B981] rounded-md hover:bg-white/5"
+                    title="Edit Account Balance"
+                    aria-label="Edit account balance"
+                  >
+                    <PencilIcon className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
             <div className="w-full h-72 flex items-center justify-center">
               <EquityCurveChart points={points} />
             </div>
-          </motion.div>
+          </div>
 
           {/* --- TRADING PERFORMANCE GAUGES --- */}
-          <motion.div
-            custom={4.5}
-            variants={sectionVariants}
+          <div
+            
+            
             className="w-full"
           >
             <div className="flex items-center gap-3 mb-6">
@@ -969,133 +1028,101 @@ const SummaryPage = () => {
               <span className="text-2xl font-bold text-[#e5e5e5] tracking-tight">Trading Performance</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-              <Gauge
-                value={stats.avgWinningTrade}
-                label="Avg. Winning Trade"
-                min={0}
-                max={Math.max(200, stats.avgWinningTrade * 1.5)}
-                unit="$"
-                color="#10B981"
-                tooltip="Average profit per winning trade. Shows how much you typically make on successful trades."
-                ariaLabel={`Average winning trade: $${stats.avgWinningTrade?.toFixed(2) || 0}`}
-                formatValue={(val) => `$${val?.toFixed(2) || "0.00"}`}
-              />
-              <Gauge
-                value={stats.winRate}
-                label="Winning Trade %"
-                min={0}
-                max={100}
-                unit=""
-                color="#3B82F6"
-                tooltip="Percentage of trades that were profitable. A good trader typically has 50%+ win rate."
-                ariaLabel={`Win rate: ${stats.winRate?.toFixed(1) || 0}%`}
-                formatValue={(val) => `${val?.toFixed(1) || "0.0"}%`}
-              />
-              <Gauge
-                value={Math.abs(stats.avgLosingTrade)}
-                label="Avg. Losing Trade"
-                min={0}
-                max={Math.max(200, Math.abs(stats.avgLosingTrade) * 1.5)}
-                unit="$"
-                color="#EF4444"
-                tooltip="Average loss per losing trade. Lower values indicate better risk management."
-                ariaLabel={`Average losing trade: $${Math.abs(stats.avgLosingTrade)?.toFixed(2) || 0}`}
-                formatValue={(val) => `-$${val?.toFixed(2) || "0.00"}`}
-              />
+              {/* Avg Winning Trade */}
+              <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center">
+                <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Avg. Winning Trade</div>
+                <div className="text-2xl font-bold leading-tight tracking-tight text-[#10B981]">
+                  ${stats.avgWinningTrade?.toFixed(2) || "0.00"}
+                </div>
+              </div>
+              
+              {/* Win Rate */}
+              <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center">
+                <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Winning Trade %</div>
+                <div className="text-2xl font-bold leading-tight tracking-tight text-[#3B82F6]">
+                  {stats.winRate?.toFixed(1) || "0.0"}%
+                </div>
+              </div>
+              
+              {/* Avg Losing Trade */}
+              <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center">
+                <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Avg. Losing Trade</div>
+                <div className="text-2xl font-bold leading-tight tracking-tight text-[#EF4444]">
+                  ${Math.abs(stats.avgLosingTrade)?.toFixed(2) || "0.00"}
+                </div>
+              </div>
             </div>
-          </motion.div>
+          </div>
 
           {/* --- KEY STATS SECTION --- */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-6 w-full">
-            <motion.div 
-              custom={5} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(16, 185, 129, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Total P&L</div>
-              <AnimatedNumber 
-                value={stats.totalPnl} 
-                className={`text-2xl font-bold leading-tight tracking-tight ${stats.totalPnl > 0 ? "text-[#10B981]" : stats.totalPnl < 0 ? "text-[#EF4444]" : "text-neutral-300"}`} 
-              />
-            </motion.div>
-            <motion.div 
-              custom={6} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(16, 185, 129, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+              <span className={`text-2xl font-bold leading-tight tracking-tight ${stats.totalPnl > 0 ? "text-[#10B981]" : stats.totalPnl < 0 ? "text-[#EF4444]" : "text-neutral-300"}`}>
+                {stats.totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Avg P&L</div>
-              <AnimatedNumber 
-                value={stats.avgPnl} 
-                className="text-2xl font-bold leading-tight tracking-tight text-[#10B981]" 
-              />
-            </motion.div>
-            <motion.div 
-              custom={7} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(139, 92, 246, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+              <span className="text-2xl font-bold leading-tight tracking-tight text-[#10B981]">
+                {stats.avgPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Avg R:R</div>
-              <AnimatedNumber 
-                value={stats.avgRr} 
-                decimals={2} 
-                className="text-2xl font-bold leading-tight tracking-tight text-[#8B5CF6]" 
-              />
-            </motion.div>
-            <motion.div 
-              custom={8} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+              <span className="text-2xl font-bold leading-tight tracking-tight text-[#8B5CF6]">
+                {stats.avgRr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Total Trades</div>
               <div className="text-2xl font-bold leading-tight tracking-tight text-[#3B82F6]">{stats.totalTrades}</div>
-            </motion.div>
-            <motion.div 
-              custom={9} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(245, 158, 11, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+            </div>
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Payouts</div>
               <div className="text-2xl font-bold leading-tight tracking-tight text-[#F59E0B]">{totalPayouts}</div>
-            </motion.div>
+            </div>
           </div>
 
           {/* --- STREAKS + BEST/WORST TRADES SECTION --- */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
             {/* Streaks */}
-            <motion.div 
-              custom={10} 
-              variants={sectionVariants} 
-              whileHover={{ scale: 1.01, boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.2)' }}
-              className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-8 flex flex-col gap-4 shadow-2xl relative overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-              }}
+            <div 
+               
+               
+              
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col gap-4"
+
             >
               <div className="text-xl font-bold mb-4 text-[#e5e5e5] tracking-tight">Streak Tracker</div>
               <div className="grid grid-cols-2 gap-6">
@@ -1116,14 +1143,14 @@ const SummaryPage = () => {
                   <div className="text-sm font-light text-neutral-400 uppercase tracking-wider">Max Loss</div>
                 </div>
               </div>
-            </motion.div>
+            </div>
 
             {/* Best/Worst Trades */}
             <div className="flex flex-col gap-4">
               {bestTrade && (
-                <motion.div 
-                  whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(16, 185, 129, 0.2)' }}
-                  className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col gap-2 shadow-2xl relative overflow-hidden"
+                <div 
+                  
+                  className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col gap-2"
                   style={{
                     background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(31, 41, 55, 0.8) 100%)',
                     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
@@ -1131,13 +1158,13 @@ const SummaryPage = () => {
                 >
                   <div className="text-sm font-light uppercase tracking-wider text-neutral-400">Best Trade</div>
                   <div className="text-2xl font-bold text-[#10B981] leading-tight tracking-tight">{bestTrade.pnl > 0 ? '+' : ''}{bestTrade.pnl}</div>
-                  <div className="text-xs text-neutral-500">{bestTrade.tickerTraded} • {new Date(bestTrade.created).toLocaleDateString()}</div>
-                </motion.div>
+                  <div className="text-xs text-neutral-500">{bestTrade.tickerTraded} • {parseCreatedDate(bestTrade).toLocaleDateString()}</div>
+                </div>
               )}
               {worstTrade && (
-                <motion.div 
-                  whileHover={{ scale: 1.02, boxShadow: '0 25px 50px -12px rgba(239, 68, 68, 0.2)' }}
-                  className="backdrop-blur-sm bg-black/20 border border-white/10 rounded-2xl p-6 flex flex-col gap-2 shadow-2xl relative overflow-hidden"
+                <div 
+                  
+                  className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col gap-2"
                   style={{
                     background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(31, 41, 55, 0.8) 100%)',
                     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)'
@@ -1145,14 +1172,14 @@ const SummaryPage = () => {
                 >
                   <div className="text-sm font-light uppercase tracking-wider text-neutral-400">Worst Trade</div>
                   <div className="text-2xl font-bold text-[#EF4444] leading-tight tracking-tight">{worstTrade.pnl > 0 ? '+' : ''}{worstTrade.pnl}</div>
-                  <div className="text-xs text-neutral-500">{worstTrade.tickerTraded} • {new Date(worstTrade.created).toLocaleDateString()}</div>
-                </motion.div>
+                  <div className="text-xs text-neutral-500">{worstTrade.tickerTraded} • {parseCreatedDate(worstTrade).toLocaleDateString()}</div>
+                </div>
               )}
             </div>
           </div>
 
 
-        </motion.div>
+        </div>
       )}
     </div>
   );

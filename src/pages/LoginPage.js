@@ -25,14 +25,33 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Email validation function
+  const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username || pin.length !== 6) {
-      setError('Enter username and 6-digit PIN');
+    
+    // Validate email format
+    if (!username) {
+      setError('Please enter your email address');
       return;
     }
+    
+    if (!isValidEmail(username)) {
+      setError('Please enter a valid email address (e.g., user@gmail.com)');
+      return;
+    }
+    
+    if (pin.length !== 6) {
+      setError('Please enter a 6-digit PIN');
+      return;
+    }
+    
     setLoading(true);
-    const email = username + '@journal.local';
+    const email = username; // Use the email directly instead of appending @journal.local
     try {
       if (mode === 'login') {
         await signInWithEmailAndPassword(auth, email, pin);
@@ -52,8 +71,8 @@ const LoginPage = () => {
       <form onSubmit={handleSubmit} className="bg-neutral-900 rounded-2xl shadow-2xl p-10 flex flex-col gap-6 min-w-[320px] max-w-xs">
         <h2 className="text-2xl font-bold text-[#e5e5e5] mb-2">Trading Journal Login</h2>
         <input
-          type="text"
-          placeholder="Username"
+          type="email"
+          placeholder="Email Address (e.g., user@gmail.com)"
           value={username}
           onChange={e => { setUsername(e.target.value); setError(''); }}
           className="bg-neutral-800 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-lg"
