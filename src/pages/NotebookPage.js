@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
-import { PlusIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/solid';
+import { PlusIcon, TrashIcon, PencilIcon, PhotoIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { BookOpenIcon } from '@heroicons/react/24/outline';
 import { UserContext } from '../App';
+import { storage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // Notebook data is stored at the user level (not account level) so it's shared across all accounts
 function getNotebookKey(user) { return `notebookData-${user || 'default'}`; }
@@ -68,6 +70,14 @@ export default function NotebookPage() {
   const [editingPage, setEditingPage] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const editorRef = useRef();
+  
+  // Sticky image states
+  const [stickyImages, setStickyImages] = useState([]);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [selectionPosition, setSelectionPosition] = useState(null);
+  const fileInputRef = useRef();
 
   // Load notebook data when user changes
   useEffect(() => {
@@ -200,6 +210,170 @@ export default function NotebookPage() {
     });
   };
 
+  // Sticky image helpers
+  const addStickyImage = (sectionId, pageId, imageUrl, position) => {
+    setSections(s => {
+      const updatedSections = s.map(sec =>
+        sec.id === sectionId
+          ? { 
+              ...sec, 
+              pages: sec.pages.map(p => 
+                p.id === pageId 
+                  ? { 
+                      ...p, 
+                      stickyImages: [
+                        ...(p.stickyImages || []), 
+                        {
+                          id: Date.now().toString(),
+                          imageUrl,
+                          selectedText: position.selectedText,
+                          textStart: position.textStart,
+                          textEnd: position.textEnd,
+                          createdAt: new Date().toISOString()
+                        }
+                      ]
+                    }
+                  : p
+              )
+            }
+          : sec
+      );
+      
+      if (currentUser?.uid) {
+        saveNotebook(currentUser.uid, updatedSections);
+      }
+      
+      return updatedSections;
+    });
+  };
+
+  const deleteStickyImage = (sectionId, pageId, imageId) => {
+    setSections(s => {
+      const updatedSections = s.map(sec =>
+        sec.id === sectionId
+          ? { 
+              ...sec, 
+              pages: sec.pages.map(p => 
+                p.id === pageId 
+                  ? { 
+                      ...p, 
+                      stickyImages: (p.stickyImages || []).filter(img => img.id !== imageId)
+                    }
+                  : p
+              )
+            }
+          : sec
+      );
+      
+      if (currentUser?.uid) {
+        saveNotebook(currentUser.uid, updatedSections);
+      }
+      
+      return updatedSections;
+    });
+  };
+
+  // Mouse-based text selection handling
+  const [mousePosition, setMousePosition] = useState(null);
+  
+  const handleMouseUp = (e) => {
+    const selection = window.getSelection();
+    
+    if (selection.rangeCount > 0 && selection.toString().trim()) {
+      // Use mouse coordinates directly
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+      
+      // Get text position for hover detection
+      const textStart = editorRef.current.selectionStart;
+      const textEnd = editorRef.current.selectionEnd;
+      
+      console.log('Mouse coords:', { mouseX, mouseY });
+      
+      setSelectionPosition({
+        x: mouseX,
+        y: mouseY,
+        selectedText: selection.toString().trim(),
+        textStart,
+        textEnd
+      });
+      
+      setMousePosition({ x: mouseX, y: mouseY });
+    } else {
+      setSelectionPosition(null);
+      setMousePosition(null);
+    }
+  };
+
+  // Track which text ranges have images
+  const [hoveredImageId, setHoveredImageId] = useState(null);
+  
+  // Check if cursor is over text with sticky image
+  const handleTextHover = (e) => {
+    if (!page?.stickyImages || !editorRef.current) return;
+    
+    const cursorPosition = editorRef.current.selectionStart;
+    
+    const hoveredImage = page.stickyImages.find(img => {
+      // Make sure we have valid text positions
+      if (typeof img.textStart !== 'number' || typeof img.textEnd !== 'number') return false;
+      return cursorPosition >= img.textStart && cursorPosition <= img.textEnd;
+    });
+    
+    // Update hovered image state
+    if (hoveredImage) {
+      setHoveredImageId(hoveredImage.id);
+    } else {
+      setHoveredImageId(null);
+    }
+  };
+  
+  // Clear hover when mouse leaves textarea
+  const handleMouseLeave = () => {
+    setHoveredImageId(null);
+  };
+
+  // Image upload handling
+  const handleImageUpload = async (file) => {
+    if (!file || !currentUser?.uid || !selectedSection || !selectedPage) {
+      console.log('Upload blocked:', { file: !!file, user: !!currentUser?.uid, section: selectedSection, page: selectedPage });
+      return;
+    }
+    
+    console.log('Starting image upload...', { file: file.name, size: file.size });
+    setUploadingImage(true);
+    
+    try {
+      const imageRef = ref(storage, `sticky-images/${currentUser.uid}/${Date.now()}-${file.name}`);
+      console.log('Uploading to:', imageRef.fullPath);
+      
+      await uploadBytes(imageRef, file);
+      const imageUrl = await getDownloadURL(imageRef);
+      console.log('Image uploaded successfully:', imageUrl);
+      
+      if (selectionPosition) {
+        console.log('Adding sticky image with position:', selectionPosition);
+        addStickyImage(selectedSection, selectedPage, imageUrl, {
+          selectedText: selectionPosition.selectedText,
+          textStart: selectionPosition.textStart,
+          textEnd: selectionPosition.textEnd
+        });
+        setSelectionPosition(null);
+        console.log('Sticky image added to page');
+      } else {
+        console.log('No selection position found');
+      }
+    } catch (error) {
+      console.error('Error uploading image:', error);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const triggerImageUpload = () => {
+    fileInputRef.current?.click();
+  };
+
   // Editor bullet support
   const handleEditorInput = (e) => {
     let value = e.target.value;
@@ -295,26 +469,153 @@ export default function NotebookPage() {
       {/* Editor */}
       <main className="flex-1 flex flex-col items-center justify-center p-8">
         {section && page ? (
-          <div className="w-full max-w-3xl flex flex-col gap-4">
-            <div className="flex items-center gap-2 mb-2">
-              <PencilIcon className="w-6 h-6 text-blue-400" />
-              <input
-                className="bg-transparent border-b border-blue-400 text-2xl font-bold w-full outline-none"
-                value={page.name}
-                onChange={e => renamePage(section.id, page.id, e.target.value)}
-              />
-            </div>
-            <textarea
+          <div className="w-full max-w-7xl flex gap-8">
+            {/* Text Editor */}
+            <div className="flex-1 max-w-3xl flex flex-col gap-4">
+              <div className="flex items-center gap-2 mb-2">
+                <PencilIcon className="w-6 h-6 text-blue-400" />
+                <input
+                  className="bg-transparent border-b border-blue-400 text-2xl font-bold w-full outline-none"
+                  value={page.name}
+                  onChange={e => renamePage(section.id, page.id, e.target.value)}
+                />
+              </div>
+              <div className="relative">
+                            <textarea
               ref={editorRef}
               className="w-full min-h-[400px] bg-[#18181c] rounded-xl p-6 text-lg font-mono text-[#e5e5e5] focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-150 shadow-xl resize-vertical"
               value={page.content}
               onChange={handleEditorInput}
+              onMouseUp={handleMouseUp}
+              onMouseMove={handleTextHover}
+              onMouseLeave={handleMouseLeave}
+              onClick={handleTextHover}
+              onKeyUp={handleTextHover}
               placeholder="Start typing your notes...\n- Bullet points supported with '-' or '*'"
               spellCheck={false}
             />
+                
+                {/* Upload Button - Mouse Coordinates */}
+                {selectionPosition && (
+                  <div 
+                    className="fixed bg-blue-600 text-white px-2 py-1 rounded shadow-lg z-[9999] flex items-center gap-1"
+                    style={{ 
+                      left: `${selectionPosition.x + 5}px`, 
+                      top: `${selectionPosition.y - 35}px` 
+                    }}
+                  >
+                    <button
+                      onClick={triggerImageUpload}
+                      disabled={uploadingImage}
+                      className="flex items-center gap-1 hover:bg-blue-700 px-1 py-0.5 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                    >
+                      <PhotoIcon className="w-3 h-3" />
+                      {uploadingImage ? 'Up...' : 'Upload'}
+                    </button>
+                  </div>
+                )}
+                
+
+              </div>
+            </div>
+            
+            {/* Sticky Notes Grid */}
+            <div className="w-64 bg-[#18181c] rounded-xl p-4 shadow-xl">
+              <div className="flex items-center gap-2 mb-3">
+                <PhotoIcon className="w-4 h-4 text-blue-400" />
+                <span className="text-sm font-medium text-[#e5e5e5]">Sticky Notes</span>
+                <span className="text-xs text-gray-400">({page.stickyImages?.length || 0})</span>
+              </div>
+              
+              {page.stickyImages && page.stickyImages.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {page.stickyImages.map((stickyImage, index) => {
+                    const isHovered = hoveredImageId === stickyImage.id;
+                    return (
+                      <div
+                        key={stickyImage.id}
+                        className="group relative transition-all duration-300"
+                        data-sticky-id={stickyImage.id}
+                      >
+                        <button
+                          onClick={() => {
+                            setSelectedImage(stickyImage.imageUrl);
+                            setShowImageModal(true);
+                          }}
+                          className={`w-full aspect-square rounded-lg shadow-md hover:shadow-lg transition-all duration-300 flex items-center justify-center relative overflow-hidden ${
+                            isHovered 
+                              ? 'bg-orange-500 scale-110 animate-pulse shadow-xl ring-2 ring-orange-300' 
+                              : 'bg-yellow-400 hover:scale-105'
+                          }`}
+                          title={`Image for: "${stickyImage.selectedText || 'Unknown text'}"`}
+                        >
+                          <PhotoIcon className={`w-6 h-6 transition-colors duration-300 ${
+                            isHovered ? 'text-orange-900' : 'text-yellow-800'
+                          }`} />
+                          <div className={`absolute bottom-0 left-0 right-0 text-white text-xs p-1 truncate transition-colors duration-300 ${
+                            isHovered ? 'bg-orange-900/70' : 'bg-black/50'
+                          }`}>
+                            {stickyImage.selectedText ? stickyImage.selectedText.substring(0, 15) + '...' : 'Image'}
+                          </div>
+
+                        </button>
+                        <button
+                          onClick={() => deleteStickyImage(selectedSection, selectedPage, stickyImage.id)}
+                          className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Delete sticky image"
+                        >
+                          <XMarkIcon className="w-3 h-3 text-white" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <PhotoIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No notes yet</p>
+                  <p className="text-xs opacity-75">Highlight text and add sticky notes</p>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="text-neutral-400 text-lg opacity-70 select-none">Select or create a section and page to start taking notes.</div>
+        )}
+        
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              handleImageUpload(file);
+              e.target.value = ''; // Reset input
+            }
+          }}
+          className="hidden"
+        />
+        
+        {/* Image Modal */}
+        {showImageModal && selectedImage && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setShowImageModal(false)}>
+            <div className="relative max-w-4xl max-h-4xl p-4">
+              <button
+                onClick={() => setShowImageModal(false)}
+                className="absolute top-2 right-2 w-10 h-10 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white z-10"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+              <img
+                src={selectedImage}
+                alt="Sticky note image"
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          </div>
         )}
       </main>
     </div>

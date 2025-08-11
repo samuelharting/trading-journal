@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Users can only access their own data
+    match /users/{userId} {
+      // Allow read/write only if the authenticated user matches the document userId
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // User accounts - nested under user document
+      match /accounts/{accountId} {
+        // Allow read/write only if the authenticated user owns this account
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        
+        // Journal entries - nested under accounts
+        match /entries/{entryId} {
+          // Allow read/write only if the authenticated user owns the parent account
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+      }
+    }
+    
+    // Favorites collection - format: userId_accountId
+    match /favorites/{favoriteId} {
+      // Allow read/write only if the favoriteId starts with the user's UID
+      allow read, write: if request.auth != null && 
+        favoriteId.matches('^' + request.auth.uid + '_.*');
+    }
+    
+    // Legacy journal entries (for migration) - REMOVE THIS AFTER MIGRATION IS COMPLETE
+    match /journalEntries/{username}/entries/{entryId} {
+      // Only allow authenticated users to read/write their own legacy data
+      // You should remove this section once migration is complete
+      allow read, write: if request.auth != null;
+    }
+  }
+}
