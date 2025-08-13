@@ -8,6 +8,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 import GlitchTitle from '../components/GlitchTitle';
 import { CalendarIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { getTradingPerformance } from '../statsUtils';
 
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -152,6 +153,44 @@ const MonthPage = () => {
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
+            
+            {/* Monthly Goal Progress - Inline */}
+            {(() => {
+              // Use the fixed trading performance calculation
+              const monthlyPerformance = getTradingPerformance(entries, year, month);
+              
+              if (!monthlyPerformance || !monthlyPerformance.hasTrades) {
+                return (
+                  <div className="flex items-center gap-2 ml-4">
+                    <span className="text-sm text-neutral-400">20% Goal:</span>
+                    <div className="w-24 bg-neutral-700 rounded-full h-2 relative">
+                      <div className="h-full w-0 bg-gradient-to-r from-blue-400 to-blue-500 transition-all duration-500 rounded-full" />
+                    </div>
+                    <span className="text-xs text-neutral-400 min-w-[32px]">0%</span>
+                  </div>
+                );
+              }
+              
+              const { percentage, progressToward20Percent } = monthlyPerformance;
+              
+              return (
+                <div className="flex items-center gap-2 ml-4">
+                  <span className="text-sm text-neutral-400">20% Goal:</span>
+                  <div className="w-24 bg-neutral-700 rounded-full h-2 relative">
+                    <div 
+                      className={`h-full transition-all duration-500 ease-out rounded-full ${
+                        percentage >= 20 ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 
+                        percentage >= 10 ? 'bg-gradient-to-r from-yellow-400 to-orange-500' : 
+                        'bg-gradient-to-r from-blue-400 to-blue-500'
+                      }`}
+                      style={{ width: `${progressToward20Percent}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-neutral-400 min-w-[32px]">{progressToward20Percent.toFixed(0)}%</span>
+                </div>
+              );
+            })()}
+            
             <div className="flex-1 border-b border-white/10 ml-4" />
           </div>
           <div className="w-full">

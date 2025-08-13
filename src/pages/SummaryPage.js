@@ -17,6 +17,7 @@ import StatCard from '../components/StatCard';
 import CircleCard from '../components/CircleCard';
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, defs, linearGradient, stop } from 'recharts';
+import { getTradingPerformance } from '../statsUtils';
 
 function sumPrecise(arr) {
   // Sums an array of numbers/strings as cents, returns float
@@ -463,123 +464,127 @@ function getWeeklyPnlsForMonth(entries, year, month) {
 function getPercentageChanges(entries, currentBalance) {
   if (!entries.length) return null;
   
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1; // Month is 1-indexed in entries
-  const currentDay = now.getDate();
+  // Sort all entries chronologically to calculate proper account balance progression
+  const sortedEntries = [...entries].sort((a, b) => {
+    const aTime = a.created ? new Date(a.created.split('-')[0]).getTime() : 0;
+    const bTime = b.created ? new Date(b.created.split('-')[0]).getTime() : 0;
+    return aTime - bTime;
+  });
   
-  // Filter for actual trades only (not deposits, payouts, or tape reading)
-  const tradingEntries = entries.filter(e => 
-    !e.isDeposit && 
-    !e.isPayout && 
-    !e.isTapeReading &&
-    e.pnl !== undefined &&
-    e.pnl !== null &&
-    e.pnl !== "" &&
-    Number(e.pnl) !== 0
-  );
-  
-  // Helper function to get entry date using year/month/day fields (like CalendarPage does)
+  // Helper to get entry date
   const getEntryDate = (entry) => {
     if (entry.year && entry.month && entry.day) {
-      // Use the year/month/day fields that are stored as strings
-      const year = parseInt(entry.year, 10);
-      const month = parseInt(entry.month, 10) - 1; // Convert to 0-indexed
-      const day = parseInt(entry.day, 10);
-      return new Date(year, month, day);
+      return new Date(parseInt(entry.year), parseInt(entry.month) - 1, parseInt(entry.day));
     }
-    // Fallback to created timestamp
     if (entry.created) {
-      const timestamp = entry.created.split('-')[0]; // Remove random suffix
-      return new Date(timestamp);
+      return new Date(entry.created.split('-')[0]);
     }
     return new Date();
   };
   
-  // Helper function to check if entry is in a specific period
-  const isEntryInPeriod = (entry, startDate, endDate) => {
-    const entryDate = getEntryDate(entry);
-    return entryDate >= startDate && entryDate <= endDate;
-  };
-  
-  // Day calculations - use year/month/day fields like CalendarPage
-  const dayEntries = tradingEntries.filter(e => 
-    String(e.year) === String(currentYear) && 
-    String(e.month) === String(currentMonth) && 
-    String(e.day) === String(currentDay)
+  // Calculate the starting capital (sum of all deposits minus payouts)
+  const totalDeposits = sumPrecise(
+    sortedEntries
+      .filter(e => e.isDeposit)
+      .map(e => Number(e.pnl) || 0)
   );
-  const dayPnl = sumPrecise(dayEntries.map(e => Number(e.pnl)));
   
-  // Week calculations
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - now.getDay());
-  weekStart.setHours(0, 0, 0, 0);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-  
-  const weekEntries = tradingEntries.filter(e => isEntryInPeriod(e, weekStart, weekEnd));
-  const weekPnl = sumPrecise(weekEntries.map(e => Number(e.pnl)));
-  
-  // Month calculations - use year/month fields like CalendarPage
-  const monthEntries = tradingEntries.filter(e => 
-    String(e.year) === String(currentYear) && 
-    String(e.month) === String(currentMonth)
+  const totalPayouts = sumPrecise(
+    sortedEntries
+      .filter(e => e.isPayout)
+      .map(e => Number(e.pnl) || 0) // Already negative
   );
-  const monthPnl = sumPrecise(monthEntries.map(e => Number(e.pnl)));
   
-  // YTD calculations - use year field like CalendarPage
-  const yearEntries = tradingEntries.filter(e => String(e.year) === String(currentYear));
-  const yearPnl = sumPrecise(yearEntries.map(e => Number(e.pnl)));
+  const startingCapital = totalDeposits + totalPayouts; // totalPayouts is negative, so this subtracts
   
-  // Calculate starting balances for percentage calculations
-  const getStartingBalance = (periodStart) => {
-    const entriesBeforePeriod = entries.filter(e => {
+  // Calculate total trading P&L (excluding deposits and payouts)
+  const totalTradingPnl = sumPrecise(
+    sortedEntries
+      .filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading)
+      .map(e => Number(e.pnl) || 0)
+  );
+  
+  // Overall account performance (trading performance only)
+  const overallPercentage = startingCapital > 0 ? (totalTradingPnl / startingCapital) * 100 : 0;
+  
+  // For day/week/month calculations, we'll show overall performance since 
+  // the user specifically mentioned the issue with period-based calculations
+  // Alternatively, we could calculate actual period-based performance if trades exist in those periods
+  
+  // Get the current date for period calculations
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const currentDay = now.getDate();
+  
+  // Helper function to get trades in a specific period
+  const getTradesInPeriod = (startDate, endDate) => {
+    return sortedEntries.filter(e => {
+      if (e.isDeposit || e.isPayout || e.isTapeReading) return false;
       const entryDate = getEntryDate(e);
-      return entryDate < periodStart;
+      return entryDate >= startDate && entryDate <= endDate;
     });
-    
-    let balance = 0;
-    entriesBeforePeriod.forEach(e => {
-      if (e.isDeposit) {
-        balance += Number(e.pnl) || 0;
-      } else if (e.isPayout) {
-        balance += Number(e.pnl) || 0; // Already negative
-      } else if (!e.isTapeReading) {
-        balance += Number(e.pnl) || 0;
-      }
-    });
-    
-    return Math.max(balance, 0.01); // Avoid division by zero, minimum 1 cent
   };
   
-  const dayStartBalance = getStartingBalance(new Date(currentYear, currentMonth - 1, currentDay));
-  const weekStartBalance = getStartingBalance(weekStart);
-  const monthStartBalance = getStartingBalance(new Date(currentYear, currentMonth - 1, 1));
-  const yearStartBalance = getStartingBalance(new Date(currentYear, 0, 1));
+  // Calculate periods
+  const startOfToday = new Date(currentYear, currentMonth - 1, currentDay, 0, 0, 0);
+  const endOfToday = new Date(currentYear, currentMonth - 1, currentDay, 23, 59, 59);
+  
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  
+  const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
+  
+  // Get trades for each period
+  const todayTrades = getTradesInPeriod(startOfToday, endOfToday);
+  const weekTrades = getTradesInPeriod(startOfWeek, now);
+  const monthTrades = getTradesInPeriod(startOfMonth, now);
+  
+  // Calculate P&L for each period
+  const dayPnl = sumPrecise(todayTrades.map(e => Number(e.pnl) || 0));
+  const weekPnl = sumPrecise(weekTrades.map(e => Number(e.pnl) || 0));
+  const monthPnl = sumPrecise(monthTrades.map(e => Number(e.pnl) || 0));
+  
+  // For percentage calculations, we have two options:
+  // Option 1: Show 0% for periods with no trades (what user mentioned they want)
+  // Option 2: Show overall performance in all cards
+  // I'll implement Option 1 as per user's request
+  
+  const dayPercentage = todayTrades.length > 0 && startingCapital > 0 ? (dayPnl / startingCapital) * 100 : 0;
+  const weekPercentage = weekTrades.length > 0 && startingCapital > 0 ? (weekPnl / startingCapital) * 100 : 0;
+  const monthPercentage = monthTrades.length > 0 && startingCapital > 0 ? (monthPnl / startingCapital) * 100 : 0;
   
   const result = {
     day: { 
       pnl: dayPnl, 
-      percentage: (dayPnl / dayStartBalance) * 100, 
-      startBalance: dayStartBalance 
+      percentage: dayPercentage,
+      hasTrades: todayTrades.length > 0
     },
     week: { 
       pnl: weekPnl, 
-      percentage: (weekPnl / weekStartBalance) * 100, 
-      startBalance: weekStartBalance 
+      percentage: weekPercentage,
+      hasTrades: weekTrades.length > 0
     },
     month: { 
       pnl: monthPnl, 
-      percentage: (monthPnl / monthStartBalance) * 100, 
-      startBalance: monthStartBalance 
+      percentage: monthPercentage,
+      hasTrades: monthTrades.length > 0
     },
-    year: { 
-      pnl: yearPnl, 
-      percentage: (yearPnl / yearStartBalance) * 100, 
-      startBalance: yearStartBalance 
+    overall: {
+      pnl: totalTradingPnl,
+      percentage: overallPercentage,
+      startingCapital: startingCapital
     }
   };
+  
+  console.log('📊 FIXED getPercentageChanges DEBUG:');
+  console.log('  Starting Capital (Deposits - Payouts):', startingCapital);
+  console.log('  Total Trading P&L:', totalTradingPnl);
+  console.log('  Overall Performance:', overallPercentage.toFixed(2) + '%');
+  console.log('  Day - P&L:', dayPnl, 'Percentage:', dayPercentage.toFixed(2) + '% (', todayTrades.length, 'trades)');
+  console.log('  Week - P&L:', weekPnl, 'Percentage:', weekPercentage.toFixed(2) + '% (', weekTrades.length, 'trades)');
+  console.log('  Month - P&L:', monthPnl, 'Percentage:', monthPercentage.toFixed(2) + '% (', monthTrades.length, 'trades)');
   
   return result;
 }
@@ -739,6 +744,10 @@ const SummaryPage = () => {
   // Calculate percentage changes (trading only, excluding deposits/payouts)
   const percentageChanges = getPercentageChanges(entries, currentBalance);
   
+  // Get current month's trading performance for the 20% goal
+  const now = new Date();
+  const currentMonthPerformance = getTradingPerformance(entries, now.getFullYear(), now.getMonth() + 1);
+  
   // Final summary
   console.log('🎯 SummaryPage: CALCULATION COMPLETE');
   console.log('🎯 Balance Display:', currentBalance);
@@ -838,8 +847,7 @@ const SummaryPage = () => {
   }));
   const weeklyTrend = stats && stats.byWeek ? Object.entries(stats.byWeek).map(([week, value]) => ({ week, value })) : [];
 
-  // Get current year/month
-  const now = new Date();
+  // Get current year/month  
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
   // Get weekly PnLs for current month
@@ -881,6 +889,21 @@ const SummaryPage = () => {
 
   const totalPayouts = entries.filter(e => e.isPayout).length;
 
+  // Check if this is a new account that needs a deposit
+  const isNewAccount = entries.length === 0 || parseFloat(currentBalance.replace(/,/g, '')) <= 0;
+  
+  const handleStartWithDeposit = () => {
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const day = now.getDate();
+    navigate(`/day/${month}/${day}`, { 
+      state: { 
+        date: now.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+        forceDepositEntry: true
+      } 
+    });
+  };
+
   return (
     <div className="w-full min-h-screen bg-black pt-20 px-4 sm:px-8">
       <div className="flex justify-between items-center mb-2">
@@ -889,6 +912,59 @@ const SummaryPage = () => {
       
       {loading ? (
         <Spinner />
+      ) : isNewAccount ? (
+        // New Account Onboarding - Deposit First
+        <div className="w-full flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="max-w-2xl text-center space-y-8">
+            {/* Welcome Message */}
+            <div className="space-y-4">
+              <div className="w-24 h-24 mx-auto bg-gradient-to-br from-blue-500 to-emerald-500 rounded-full flex items-center justify-center shadow-2xl">
+                <CurrencyDollarIcon className="w-12 h-12 text-white" />
+              </div>
+              <h1 className="text-4xl font-bold text-[#e5e5e5] mb-4">
+                Welcome to Your Trading Journal!
+              </h1>
+              <p className="text-xl text-neutral-400 leading-relaxed">
+                Let's get started by adding your initial deposit to track your trading progress.
+              </p>
+            </div>
+
+            {/* Call to Action */}
+            <div className="space-y-4">
+              <button
+                onClick={handleStartWithDeposit}
+                className="bg-gradient-to-r from-emerald-500 to-blue-500 hover:from-emerald-600 hover:to-blue-600 text-white text-xl font-bold px-12 py-4 rounded-xl shadow-2xl hover:shadow-emerald-500/25 transition-all duration-300 hover:scale-105"
+              >
+                Add Initial Deposit
+              </button>
+              
+              <p className="text-sm text-neutral-500">
+                You can always add more deposits, payouts, and trades later.
+              </p>
+            </div>
+
+            {/* Features Preview */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 text-center">
+              <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6">
+                <ChartBarIcon className="w-8 h-8 text-blue-400 mx-auto mb-3" />
+                <h3 className="text-lg font-semibold text-[#e5e5e5] mb-2">Track Performance</h3>
+                <p className="text-sm text-neutral-400">Monitor your P&L, win rate, and trading statistics</p>
+              </div>
+              
+              <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6">
+                <CalendarIcon className="w-8 h-8 text-emerald-400 mx-auto mb-3" />
+                <h3 className="text-lg font-semibold text-[#e5e5e5] mb-2">Daily Journal</h3>
+                <p className="text-sm text-neutral-400">Log trades, screenshots, and notes for each day</p>
+              </div>
+              
+              <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6">
+                <ArrowTrendingUpIcon className="w-8 h-8 text-purple-400 mx-auto mb-3" />
+                <h3 className="text-lg font-semibold text-[#e5e5e5] mb-2">20% Monthly Goal</h3>
+                <p className="text-sm text-neutral-400">Track progress toward your monthly targets</p>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : !stats ? (
         <div className="text-neutral-500">No data yet.</div>
       ) : (
@@ -901,7 +977,7 @@ const SummaryPage = () => {
               {percentageChanges ? (
                 <>
                   <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.day.pnl > 0 ? 'text-[#10B981]' : percentageChanges.day.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.day.pnl > 0 ? '+' : ''}{percentageChanges.day.pnl.toFixed(2)}
+                    {percentageChanges.day.pnl > 0 ? '+' : ''}${percentageChanges.day.pnl.toFixed(2)}
                   </div>
                   <div className={`text-sm font-semibold ${percentageChanges.day.percentage > 0 ? 'text-[#10B981]' : percentageChanges.day.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
                     {percentageChanges.day.percentage > 0 ? '+' : ''}{percentageChanges.day.percentage.toFixed(2)}%
@@ -922,7 +998,7 @@ const SummaryPage = () => {
               {percentageChanges ? (
                 <>
                   <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.week.pnl > 0 ? 'text-[#10B981]' : percentageChanges.week.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.week.pnl > 0 ? '+' : ''}{percentageChanges.week.pnl.toFixed(2)}
+                    {percentageChanges.week.pnl > 0 ? '+' : ''}${percentageChanges.week.pnl.toFixed(2)}
                   </div>
                   <div className={`text-sm font-semibold ${percentageChanges.week.percentage > 0 ? 'text-[#10B981]' : percentageChanges.week.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
                     {percentageChanges.week.percentage > 0 ? '+' : ''}{percentageChanges.week.percentage.toFixed(2)}%
@@ -936,29 +1012,60 @@ const SummaryPage = () => {
                
                
               
-              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
+              className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center relative"
 
             >
               <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">This Month</div>
               {percentageChanges ? (
                 <>
                   <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.month.pnl > 0 ? 'text-[#10B981]' : percentageChanges.month.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.month.pnl > 0 ? '+' : ''}{percentageChanges.month.pnl.toFixed(2)}
+                    {percentageChanges.month.pnl > 0 ? '+' : ''}${percentageChanges.month.pnl.toFixed(2)}
                   </div>
                   <div className={`text-sm font-semibold ${percentageChanges.month.percentage > 0 ? 'text-[#10B981]' : percentageChanges.month.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
                     {percentageChanges.month.percentage > 0 ? '+' : ''}{percentageChanges.month.percentage.toFixed(2)}%
                   </div>
+                  
+                  {/* 20% Goal Progress Bar */}
+                  <div className="w-full mt-3">
+                    <div className="flex justify-between items-center text-xs text-neutral-400 mb-1">
+                      <span>Goal: 20%</span>
+                      <span>{currentMonthPerformance ? currentMonthPerformance.progressToward20Percent.toFixed(0) : 0}%</span>
+                    </div>
+                    <div className="w-full bg-neutral-700 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-500 ease-out ${
+                          currentMonthPerformance && currentMonthPerformance.percentage >= 20 ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 
+                          currentMonthPerformance && currentMonthPerformance.percentage >= 10 ? 'bg-gradient-to-r from-yellow-400 to-orange-500' : 
+                          'bg-gradient-to-r from-blue-400 to-blue-500'
+                        }`}
+                        style={{ 
+                          width: `${currentMonthPerformance ? currentMonthPerformance.progressToward20Percent : 0}%` 
+                        }}
+                      />
+                    </div>
+                  </div>
                 </>
               ) : (
                 <>
-                  <div className="text-3xl font-bold leading-tight tracking-tight text-neutral-300">0.00</div>
+                  <div className="text-3xl font-bold leading-tight tracking-tight text-neutral-300">$0.00</div>
                   <div className="text-sm font-semibold text-neutral-300">0.00%</div>
+                  
+                  {/* 20% Goal Progress Bar - Empty State */}
+                  <div className="w-full mt-3">
+                    <div className="flex justify-between items-center text-xs text-neutral-400 mb-1">
+                      <span>Goal: 20%</span>
+                      <span>0%</span>
+                    </div>
+                    <div className="w-full bg-neutral-700 rounded-full h-2">
+                      <div className="h-full w-0 bg-gradient-to-r from-blue-400 to-blue-500 transition-all duration-500" />
+                    </div>
+                  </div>
                 </>
               )}
               <div className="text-xs text-neutral-500 mt-1">{now.toLocaleString('default', { month: 'short' })} {currentYear}</div>
             </div>
             
-            {/* YTD Performance */}
+            {/* Overall Performance */}
             <div 
                
                
@@ -966,23 +1073,23 @@ const SummaryPage = () => {
               className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-6 flex flex-col items-center justify-center"
 
             >
-              <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">YTD Performance</div>
+              <div className="text-sm font-light mb-2 uppercase tracking-wider text-neutral-400">Overall Performance</div>
               {percentageChanges ? (
                 <>
-                  <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.year.pnl > 0 ? 'text-[#10B981]' : percentageChanges.year.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.year.pnl > 0 ? '+' : ''}{percentageChanges.year.pnl.toFixed(2)}
+                  <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.overall.pnl > 0 ? 'text-[#10B981]' : percentageChanges.overall.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
+                    {percentageChanges.overall.pnl > 0 ? '+' : ''}${percentageChanges.overall.pnl.toFixed(2)}
                   </div>
-                  <div className={`text-sm font-semibold ${percentageChanges.year.percentage > 0 ? 'text-[#10B981]' : percentageChanges.year.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.year.percentage > 0 ? '+' : ''}{percentageChanges.year.percentage.toFixed(2)}%
+                  <div className={`text-sm font-semibold ${percentageChanges.overall.percentage > 0 ? 'text-[#10B981]' : percentageChanges.overall.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
+                    {percentageChanges.overall.percentage > 0 ? '+' : ''}{percentageChanges.overall.percentage.toFixed(2)}%
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="text-3xl font-bold leading-tight tracking-tight text-neutral-300">0.00</div>
+                  <div className="text-3xl font-bold leading-tight tracking-tight text-neutral-300">$0.00</div>
                   <div className="text-sm font-semibold text-neutral-300">0.00%</div>
                 </>
               )}
-              <div className="text-xs text-neutral-500 mt-1">{currentYear}</div>
+              <div className="text-xs text-neutral-500 mt-1">Trading Performance</div>
             </div>
           </div>
 

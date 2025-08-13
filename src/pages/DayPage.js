@@ -61,6 +61,15 @@ const DayPage = () => {
   const [entries, setEntries] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [forceDepositEntry, setForceDepositEntry] = useState(false);
+
+  // Check if we should force a deposit entry
+  useEffect(() => {
+    if (location.state?.forceDepositEntry) {
+      setForceDepositEntry(true);
+      setShowForm(true);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     if (!currentUser || !selectedAccount || !month || !day) return;
@@ -162,9 +171,14 @@ const DayPage = () => {
           onSave={(savedEntry) => {
             handleAddEntry(savedEntry);
             setShowForm(false);
+            setForceDepositEntry(false);
           }} 
-          onCancel={() => setShowForm(false)} 
-          initialAccountBalance={initialAccountBalance} 
+          onCancel={() => {
+            setShowForm(false);
+            setForceDepositEntry(false);
+          }} 
+          initialAccountBalance={initialAccountBalance}
+          forceEntryType={forceDepositEntry ? 'deposit' : null}
         />
       )}
       </div>

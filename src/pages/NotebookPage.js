@@ -77,6 +77,7 @@ export default function NotebookPage() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [selectionPosition, setSelectionPosition] = useState(null);
+  const [loadingImages, setLoadingImages] = useState(new Set());
   const fileInputRef = useRef();
 
   // Load notebook data when user changes
@@ -280,25 +281,32 @@ export default function NotebookPage() {
     const selection = window.getSelection();
     
     if (selection.rangeCount > 0 && selection.toString().trim()) {
-      // Use mouse coordinates directly
-      const mouseX = e.clientX;
-      const mouseY = e.clientY;
+      // Get the selection range
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
       
-      // Get text position for hover detection
+      // Get textarea position to calculate relative positioning
+      const textareaRect = editorRef.current.getBoundingClientRect();
+      
+      // Position button relative to textarea (absolute positioning)
+      const buttonX = rect.right - textareaRect.left;
+      const buttonY = rect.bottom - textareaRect.top;
+      
+      // Get text position for upload
       const textStart = editorRef.current.selectionStart;
       const textEnd = editorRef.current.selectionEnd;
       
-      console.log('Mouse coords:', { mouseX, mouseY });
+      console.log('Selection position:', { buttonX, buttonY, rect, textareaRect });
       
       setSelectionPosition({
-        x: mouseX,
-        y: mouseY,
+        x: buttonX,
+        y: buttonY,
         selectedText: selection.toString().trim(),
         textStart,
         textEnd
       });
       
-      setMousePosition({ x: mouseX, y: mouseY });
+      setMousePosition({ x: buttonX, y: buttonY });
     } else {
       setSelectionPosition(null);
       setMousePosition(null);
@@ -306,31 +314,26 @@ export default function NotebookPage() {
   };
 
   // Track which text ranges have images
-  const [hoveredImageId, setHoveredImageId] = useState(null);
+  const [highlightedImageId, setHighlightedImageId] = useState(null);
   
-  // Check if cursor is over text with sticky image
-  const handleTextHover = (e) => {
-    if (!page?.stickyImages || !editorRef.current) return;
+  // Check if cursor is over text with sticky image (only on click, not hover)
+  const handleTextClick = (e) => {
+    if (!page?.stickyImages || !editorRef.current) {
+      // Clear highlight if no page or images
+      setHighlightedImageId(null);
+      return;
+    }
     
     const cursorPosition = editorRef.current.selectionStart;
     
-    const hoveredImage = page.stickyImages.find(img => {
+    const clickedImage = page.stickyImages.find(img => {
       // Make sure we have valid text positions
       if (typeof img.textStart !== 'number' || typeof img.textEnd !== 'number') return false;
       return cursorPosition >= img.textStart && cursorPosition <= img.textEnd;
     });
     
-    // Update hovered image state
-    if (hoveredImage) {
-      setHoveredImageId(hoveredImage.id);
-    } else {
-      setHoveredImageId(null);
-    }
-  };
-  
-  // Clear hover when mouse leaves textarea
-  const handleMouseLeave = () => {
-    setHoveredImageId(null);
+    // Always update highlighted image state - either set to found image or clear it
+    setHighlightedImageId(clickedImage ? clickedImage.id : null);
   };
 
   // Image upload handling
@@ -395,16 +398,26 @@ export default function NotebookPage() {
   const section = sections.find(s => s.id === selectedSection);
   const page = section?.pages.find(p => p.id === selectedPage);
 
+  // Clear highlighted image when switching pages
+  useEffect(() => {
+    setHighlightedImageId(null);
+  }, [selectedPage, selectedSection]);
+
+  // Clear highlight when clicking outside textarea
+  const clearHighlight = () => {
+    setHighlightedImageId(null);
+  };
+
   return (
-    <div className="flex w-full min-h-screen bg-[#101014] text-[#e5e5e5]">
+    <div className="flex w-full min-h-screen bg-[#101014] text-[#e5e5e5]" onClick={clearHighlight}>
       {/* Sidebar */}
-      <aside className="w-80 min-w-[16rem] max-w-xs bg-[#18181c] border-r border-white/5 flex flex-col p-4 gap-4">
+      <aside className="w-80 min-w-[16rem] max-w-xs bg-[#18181c] border-r border-white/5 flex flex-col p-4 gap-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-2">
           <BookOpenIcon className="w-7 h-7 text-blue-400" />
           <span className="text-2xl font-bold tracking-tight">Notebook</span>
         </div>
         <button
-          className="flex items-center gap-2 px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded text-white font-semibold mb-2"
+          className="flex items-center gap-2 px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded text-white font-semibold mb-2 transition-colors duration-200"
           onClick={addSection}
         >
           <PlusIcon className="w-5 h-5" /> New Section
@@ -424,7 +437,7 @@ export default function NotebookPage() {
                   />
                 ) : (
                   <span
-                    className="flex-1 text-lg font-semibold cursor-pointer"
+                    className="flex-1 text-lg font-semibold cursor-pointer hover:text-blue-300 transition-colors duration-200"
                     onClick={() => { setSelectedSection(sec.id); if (sec.pages.length > 0) setSelectedPage(sec.pages[0].id); }}
                     onDoubleClick={() => setEditingSection(sec.id)}
                   >
@@ -449,14 +462,19 @@ export default function NotebookPage() {
                         onKeyDown={e => { if (e.key === 'Enter') setEditingPage(null); }}
                       />
                     ) : (
-                      <span className="flex-1 text-base" onDoubleClick={() => setEditingPage(p.id)}>{p.name}</span>
+                      <span 
+                        className="flex-1 text-base cursor-pointer hover:text-blue-200 transition-colors duration-200" 
+                        onDoubleClick={() => setEditingPage(p.id)}
+                      >
+                        {p.name}
+                      </span>
                     )}
                     <button className="ml-1 p-1 hover:text-blue-400" onClick={e => { e.stopPropagation(); setEditingPage(p.id); }} title="Rename Page"><PencilIcon className="w-4 h-4" /></button>
                     <button className="ml-1 p-1 hover:text-red-400" onClick={e => { e.stopPropagation(); deletePage(sec.id, p.id); }} title="Delete Page"><TrashIcon className="w-4 h-4" /></button>
                   </div>
                 ))}
                 <button
-                  className="flex items-center gap-1 text-xs text-blue-300 hover:text-blue-400 mt-1 mb-2"
+                  className="flex items-center gap-1 text-xs text-blue-300 hover:text-blue-100 transition-colors duration-200 mt-1 mb-2"
                   onClick={() => addPage(sec.id)}
                 >
                   <PlusIcon className="w-4 h-4" /> New Page
@@ -472,45 +490,46 @@ export default function NotebookPage() {
           <div className="w-full max-w-7xl flex gap-8">
             {/* Text Editor */}
             <div className="flex-1 max-w-3xl flex flex-col gap-4">
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
                 <PencilIcon className="w-6 h-6 text-blue-400" />
                 <input
-                  className="bg-transparent border-b border-blue-400 text-2xl font-bold w-full outline-none"
+                  className="bg-transparent border-b border-blue-400 text-2xl font-bold w-full outline-none focus:border-blue-200 transition-colors duration-200"
                   value={page.name}
                   onChange={e => renamePage(section.id, page.id, e.target.value)}
+                  onClick={clearHighlight}
                 />
               </div>
               <div className="relative">
                             <textarea
               ref={editorRef}
-              className="w-full min-h-[400px] bg-[#18181c] rounded-xl p-6 text-lg font-mono text-[#e5e5e5] focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-150 shadow-xl resize-vertical"
+              className="w-full min-h-[400px] bg-[#18181c] rounded-xl p-6 text-lg font-mono text-[#e5e5e5] focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300 shadow-xl resize-vertical"
               value={page.content}
               onChange={handleEditorInput}
               onMouseUp={handleMouseUp}
-              onMouseMove={handleTextHover}
-              onMouseLeave={handleMouseLeave}
-              onClick={handleTextHover}
-              onKeyUp={handleTextHover}
+              onClick={(e) => { e.stopPropagation(); handleTextClick(e); }}
+              onKeyUp={handleTextClick}
+              onFocus={handleTextClick}
               placeholder="Start typing your notes...\n- Bullet points supported with '-' or '*'"
               spellCheck={false}
             />
                 
-                {/* Upload Button - Mouse Coordinates */}
+                {/* Upload Button - Right next to selection */}
                 {selectionPosition && (
                   <div 
-                    className="fixed bg-blue-600 text-white px-2 py-1 rounded shadow-lg z-[9999] flex items-center gap-1"
+                    className="absolute bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded shadow-lg z-[9999] flex items-center gap-2 transition-colors duration-200"
                     style={{ 
-                      left: `${selectionPosition.x + 5}px`, 
-                      top: `${selectionPosition.y - 35}px` 
+                      left: `${selectionPosition.x}px`, 
+                      top: `${selectionPosition.y + 5}px` 
                     }}
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <button
                       onClick={triggerImageUpload}
                       disabled={uploadingImage}
-                      className="flex items-center gap-1 hover:bg-blue-700 px-1 py-0.5 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                      className="flex items-center gap-1 text-sm font-medium disabled:opacity-50"
                     >
-                      <PhotoIcon className="w-3 h-3" />
-                      {uploadingImage ? 'Up...' : 'Upload'}
+                      <PhotoIcon className={`w-4 h-4 ${uploadingImage ? 'animate-spin' : ''}`} />
+                      {uploadingImage ? 'Uploading...' : 'Add Image'}
                     </button>
                   </div>
                 )}
@@ -520,17 +539,19 @@ export default function NotebookPage() {
             </div>
             
             {/* Sticky Notes Grid */}
-            <div className="w-64 bg-[#18181c] rounded-xl p-4 shadow-xl">
+            <div className="w-64 bg-[#18181c] rounded-xl p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center gap-2 mb-3">
                 <PhotoIcon className="w-4 h-4 text-blue-400" />
                 <span className="text-sm font-medium text-[#e5e5e5]">Sticky Notes</span>
-                <span className="text-xs text-gray-400">({page.stickyImages?.length || 0})</span>
+                <span className="text-xs text-gray-400">
+                  ({page.stickyImages?.length || 0})
+                </span>
               </div>
               
               {page.stickyImages && page.stickyImages.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
                   {page.stickyImages.map((stickyImage, index) => {
-                    const isHovered = hoveredImageId === stickyImage.id;
+                    const isHighlighted = highlightedImageId === stickyImage.id;
                     return (
                       <div
                         key={stickyImage.id}
@@ -542,22 +563,58 @@ export default function NotebookPage() {
                             setSelectedImage(stickyImage.imageUrl);
                             setShowImageModal(true);
                           }}
-                          className={`w-full aspect-square rounded-lg shadow-md hover:shadow-lg transition-all duration-300 flex items-center justify-center relative overflow-hidden ${
-                            isHovered 
-                              ? 'bg-orange-500 scale-110 animate-pulse shadow-xl ring-2 ring-orange-300' 
-                              : 'bg-yellow-400 hover:scale-105'
+                          className={`w-full aspect-square rounded-lg shadow-md hover:shadow-xl transition-all duration-500 relative overflow-hidden group ${
+                            isHighlighted 
+                              ? 'scale-[2] shadow-2xl z-20' 
+                              : 'hover:scale-110 hover:z-10'
                           }`}
                           title={`Image for: "${stickyImage.selectedText || 'Unknown text'}"`}
                         >
-                          <PhotoIcon className={`w-6 h-6 transition-colors duration-300 ${
-                            isHovered ? 'text-orange-900' : 'text-yellow-800'
-                          }`} />
-                          <div className={`absolute bottom-0 left-0 right-0 text-white text-xs p-1 truncate transition-colors duration-300 ${
-                            isHovered ? 'bg-orange-900/70' : 'bg-black/50'
-                          }`}>
+                          {/* Loading State */}
+                          {loadingImages.has(stickyImage.id) && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gray-800/80">
+                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
+                            </div>
+                          )}
+                          
+                          {/* Actual Image */}
+                          <img
+                            src={stickyImage.imageUrl}
+                            alt={`Sticky note for: ${stickyImage.selectedText}`}
+                            className="w-full h-full object-cover transition-all duration-300 group-hover:brightness-105"
+                            onLoadStart={() => {
+                              setLoadingImages(prev => new Set(prev).add(stickyImage.id));
+                            }}
+                            onError={(e) => {
+                              // Fallback to icon if image fails to load
+                              setLoadingImages(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(stickyImage.id);
+                                return newSet;
+                              });
+                              e.target.style.display = 'none';
+                              e.target.parentElement.querySelector('.fallback-icon').style.display = 'flex';
+                            }}
+                            onLoad={(e) => {
+                              // Hide fallback icon if image loads successfully
+                              setLoadingImages(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(stickyImage.id);
+                                return newSet;
+                              });
+                              e.target.parentElement.querySelector('.fallback-icon').style.display = 'none';
+                            }}
+                          />
+                          
+                          {/* Fallback Icon */}
+                          <div className="fallback-icon absolute inset-0 flex items-center justify-center bg-yellow-400" style={{ display: 'none' }}>
+                            <PhotoIcon className="w-6 h-6 text-yellow-800" />
+                          </div>
+                          
+                          {/* Text Overlay */}
+                          <div className="absolute bottom-0 left-0 right-0 text-white text-xs p-1 truncate backdrop-blur-sm bg-black/60 group-hover:bg-black/70 transition-all duration-300">
                             {stickyImage.selectedText ? stickyImage.selectedText.substring(0, 15) + '...' : 'Image'}
                           </div>
-
                         </button>
                         <button
                           onClick={() => deleteStickyImage(selectedSection, selectedPage, stickyImage.id)}
@@ -600,18 +657,21 @@ export default function NotebookPage() {
         
         {/* Image Modal */}
         {showImageModal && selectedImage && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setShowImageModal(false)}>
-            <div className="relative max-w-4xl max-h-4xl p-4">
+          <div 
+            className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 animate-fadeIn" 
+            onClick={() => setShowImageModal(false)}
+          >
+            <div className="relative max-w-5xl max-h-5xl p-4 animate-scaleIn">
               <button
                 onClick={() => setShowImageModal(false)}
-                className="absolute top-2 right-2 w-10 h-10 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white z-10"
+                className="absolute top-2 right-2 w-12 h-12 bg-red-500 hover:bg-red-400 hover:scale-110 rounded-full flex items-center justify-center text-white z-10 transition-all duration-300 shadow-lg hover:shadow-red-500/30"
               >
-                <XMarkIcon className="w-6 h-6" />
+                <XMarkIcon className="w-7 h-7" />
               </button>
               <img
                 src={selectedImage}
                 alt="Sticky note image"
-                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                className="max-w-full max-h-full object-contain rounded-xl shadow-3xl hover:scale-105 transition-transform duration-300"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>

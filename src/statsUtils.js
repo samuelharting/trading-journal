@@ -75,6 +75,72 @@ export function getMonthlyPnl(entries, year, month) {
   return Math.round(result * 100) / 100;
 }
 
+// Precision-safe sum function
+function sumPrecise(arr) {
+  return arr.reduce((sum, v) => sum + Math.round(Number(v) * 100), 0) / 100;
+}
+
+// Calculate trading performance percentages (fixed logic from SummaryPage)
+export function getTradingPerformance(entries, targetYear = null, targetMonth = null) {
+  if (!entries.length) return null;
+  
+  // Sort all entries chronologically
+  const sortedEntries = [...entries].sort((a, b) => {
+    const aTime = a.created ? new Date(a.created.split('-')[0]).getTime() : 0;
+    const bTime = b.created ? new Date(b.created.split('-')[0]).getTime() : 0;
+    return aTime - bTime;
+  });
+  
+  // Helper to get entry date
+  const getEntryDate = (entry) => {
+    if (entry.year && entry.month && entry.day) {
+      return new Date(parseInt(entry.year), parseInt(entry.month) - 1, parseInt(entry.day));
+    }
+    if (entry.created) {
+      return new Date(entry.created.split('-')[0]);
+    }
+    return new Date();
+  };
+  
+  // Calculate the starting capital (sum of all deposits minus payouts)
+  const totalDeposits = sumPrecise(
+    sortedEntries
+      .filter(e => e.isDeposit)
+      .map(e => Number(e.pnl) || 0)
+  );
+  
+  const totalPayouts = sumPrecise(
+    sortedEntries
+      .filter(e => e.isPayout)
+      .map(e => Number(e.pnl) || 0) // Already negative
+  );
+  
+  const startingCapital = totalDeposits + totalPayouts; // totalPayouts is negative, so this subtracts
+  
+  // If specific year/month requested, filter trades to that period
+  let tradesToAnalyze = sortedEntries.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading);
+  
+  if (targetYear !== null && targetMonth !== null) {
+    tradesToAnalyze = tradesToAnalyze.filter(e => 
+      String(e.year) === String(targetYear) && String(e.month) === String(targetMonth)
+    );
+  }
+  
+  // Calculate total trading P&L for the period
+  const tradingPnl = sumPrecise(tradesToAnalyze.map(e => Number(e.pnl) || 0));
+  
+  // Calculate performance percentage
+  const performancePercentage = startingCapital > 0 ? (tradingPnl / startingCapital) * 100 : 0;
+  
+  return {
+    pnl: tradingPnl,
+    percentage: performancePercentage,
+    startingCapital: startingCapital,
+    progressToward20Percent: Math.min(100, Math.max(0, (performancePercentage / 20) * 100)),
+    hasTrades: tradesToAnalyze.length > 0
+  };
+}
+
 // Get the current account balance using the logic from SummaryPage
 export function getCurrentBalance(entries) {
   if (!entries.length) return { balance: '0.00', totalDeposits: '0.00', totalPayouts: '0.00' };

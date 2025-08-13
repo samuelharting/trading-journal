@@ -86,13 +86,13 @@ function calculateAccountBalance(previousBalance, pnl) {
   return (Math.round((prev + pnlValue) * 100) / 100).toFixed(2);
 }
 
-const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
+const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryType }) => {
   const { currentUser, selectedAccount } = useContext(UserContext);
   const [form, setForm] = useState({ ...initialState, accountBalance: initialAccountBalance ?? "" });
   const [screenshots, setScreenshots] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [entryType, setEntryType] = useState('trade');
+  const [entryType, setEntryType] = useState(forceEntryType || 'trade');
   const fileInputRef = useRef();
 
   // Add new state for all toggles and POI
@@ -226,6 +226,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
       ...tradeEnv,
       poi,
       economicRelease,
+      title: entryType === 'deposit' ? `$${Number(form.pnl).toFixed(2)} Deposit` : form.title, // Auto-generate title for deposits
       pnl: entryType === 'trade' ? Number(form.pnl) : entryType === 'payout' ? -Number(form.pnl) : entryType === 'deposit' ? Number(form.pnl) : 0,
       rr: entryType === 'trade' ? form.rr : '0',
       accountBalance: calculateAccountBalance(initialAccountBalance, entryType === 'trade' ? Number(form.pnl) : entryType === 'payout' ? -Number(form.pnl) : entryType === 'deposit' ? Number(form.pnl) : 0),
@@ -264,7 +265,8 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
           <select
             value={entryType}
             onChange={handleEntryTypeChange}
-            className="bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-sm"
+            disabled={!!forceEntryType}
+            className={`bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-sm ${forceEntryType ? 'opacity-60 cursor-not-allowed' : ''}`}
           >
             {entryTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
@@ -324,20 +326,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance }) => {
               <span className="text-lg text-emerald-300/80 italic text-center">Keep building your capital for bigger opportunities!</span>
             </div>
 
-            {/* Title Input Section */}
-            <div className="flex justify-center w-full z-10 mb-6">
-              <div className="flex flex-col gap-2 w-full max-w-lg">
-                <label className="text-xl font-bold text-emerald-300 text-center">Title (Optional)</label>
-                <input 
-                  name="title" 
-                  type="text" 
-                  value={form.title} 
-                  onChange={handleChange} 
-                  className="w-full bg-emerald-950/60 text-emerald-100 rounded-xl p-3 border-2 border-emerald-600/50 text-lg shadow-xl focus:ring-2 focus:ring-emerald-400/50 transition-all" 
-                  placeholder="Short title for this deposit..." 
-                />
-              </div>
-            </div>
+
             
             {/* Amount Input Section */}
             <div className="flex justify-center w-full z-10">
