@@ -20,7 +20,55 @@ const getClearTimestampKey = (userId, accountId) => `contextClearTimestamp_${use
 function entryToText(entry) {
   // Handle tape reading entries
   if (entry.tapeReading) {
-    return `Tape Reading: ${entry.notes || '(blank)'}`;
+    let lines = [];
+    lines.push(`Title: ${entry.title || '(blank)'}`);
+    
+    // Auto-calculate day of the week from the date for tape readings too
+    let dayOfWeek = '(blank)';
+    
+    // Try to use month/day fields first (more reliable)
+    if (entry.month && entry.day) {
+      const year = entry.year || new Date().getFullYear();
+      const month = parseInt(entry.month) - 1; // JS months are 0-indexed
+      const day = parseInt(entry.day);
+      const date = new Date(year, month, day);
+      if (!isNaN(date.getTime())) {
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        dayOfWeek = days[date.getDay()];
+      }
+    }
+    
+    // Fallback to parsing created timestamp
+    if (dayOfWeek === '(blank)' && entry.created) {
+      try {
+        // Handle the timestamp format that includes random suffix
+        const lastDashIndex = entry.created.lastIndexOf('-');
+        if (lastDashIndex > 10) { // Make sure it's not a date dash
+          const isoString = entry.created.substring(0, lastDashIndex);
+          const date = new Date(isoString);
+          if (!isNaN(date.getTime())) {
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            dayOfWeek = days[date.getDay()];
+          }
+        }
+      } catch (e) {
+        console.error('Error parsing date:', e);
+      }
+    }
+    lines.push(`Day of the Week: ${dayOfWeek}`);
+    
+    // Handle POI for tape readings too
+    let poiText = '(blank)';
+    if (entry.poi) {
+      if (Array.isArray(entry.poi)) {
+        poiText = entry.poi.length > 0 ? entry.poi.join(', ') : '(blank)';
+      } else {
+        poiText = entry.poi;
+      }
+    }
+    lines.push(`POI: ${poiText}`);
+    lines.push(`Notes: ${entry.notes || '(blank)'}`);
+    return lines.join("\n");
   }
   // Handle deposit entries
   if (entry.isDeposit) {
@@ -30,11 +78,13 @@ function entryToText(entry) {
   if (entry.isPayout) {
     return `Payout: $${Math.abs(entry.pnl || 0)} - Account Balance: $${entry.accountBalance || 0} - ${entry.notes || '(blank)'}`;
   }
-  // Modern trade entry fields only
+  // Modern trade entry fields - show ALL fields regardless of selection
   let lines = [];
+  lines.push(`Title: ${entry.title || '(blank)'}`);
   lines.push(`Ticker: ${entry.tickerTraded || '(blank)'}`);
   lines.push(`Entry Time: ${entry.entryTime || '(blank)'}`);
   lines.push(`Exit Time: ${entry.exitTime || '(blank)'}`);
+  lines.push(`Duration: ${entry.duration || '(blank)'}`);
   lines.push(`P&L: ${entry.pnl !== undefined && entry.pnl !== '' ? entry.pnl : '(blank)'}`);
   lines.push(`R:R: ${entry.rr !== undefined && entry.rr !== '' ? entry.rr : '(blank)'}`);
   lines.push(`Economic Release: ${entry.economicRelease || '(blank)'}`);
@@ -58,11 +108,14 @@ function entryToText(entry) {
   if (dayOfWeek === '(blank)' && entry.created) {
     try {
       // Handle the timestamp format that includes random suffix
-      const timestamp = entry.created.split('-')[0]; // Remove the random suffix
-      const date = new Date(timestamp);
-      if (!isNaN(date.getTime())) {
-        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        dayOfWeek = days[date.getDay()];
+      const lastDashIndex = entry.created.lastIndexOf('-');
+      if (lastDashIndex > 10) { // Make sure it's not a date dash
+        const isoString = entry.created.substring(0, lastDashIndex);
+        const date = new Date(isoString);
+        if (!isNaN(date.getTime())) {
+          const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          dayOfWeek = days[date.getDay()];
+        }
       }
     } catch (e) {
       console.error('Error parsing date:', e);
@@ -70,16 +123,28 @@ function entryToText(entry) {
   }
   lines.push(`Day of the Week: ${dayOfWeek}`);
   
+  // Session Context - show ALL fields with their actual values
   lines.push(`Daily High/Low Taken: ${entry.dailyHighLowTaken === true || entry.dailyHighLowTaken === 'true' ? 'Yes' : 'No'}`);
   lines.push(`00:00 Open: ${entry.aboveBelow0000 === 'above' ? 'Aligned' : 'Not Aligned'}`);
   lines.push(`8:30 Open: ${entry.aboveBelow0830 === 'above' ? 'Aligned' : 'Not Aligned'}`);
-  lines.push(`9:30 Open: ${entry.aboveBelow0930 === 'above' ? 'Aligned' : 'Not Aligned'}`);
   lines.push(`Macro: ${entry.macroRange === true || entry.macroRange === 'true' ? 'Yes' : 'No'}`);
+  
+  // Trade Environment - show ALL fields with their actual values
   lines.push(`Judas Swing: ${entry.judasSwing === true || entry.judasSwing === 'true' ? 'Yes' : 'No'}`);
   lines.push(`Silver Bullet: ${entry.silverBullet === true || entry.silverBullet === 'true' ? 'Yes' : 'No'}`);
   lines.push(`Clear Manipulation: ${entry.manipulation === true || entry.manipulation === 'true' ? 'Yes' : 'No'}`);
   lines.push(`SMT: ${entry.smt === true || entry.smt === 'true' ? 'Yes' : 'No'}`);
-  lines.push(`POI: ${entry.poi || '(blank)'}`);
+  
+  // Handle POI as either array or string for backward compatibility
+  let poiText = '(blank)';
+  if (entry.poi) {
+    if (Array.isArray(entry.poi)) {
+      poiText = entry.poi.length > 0 ? entry.poi.join(', ') : '(blank)';
+    } else {
+      poiText = entry.poi;
+    }
+  }
+  lines.push(`POI: ${poiText}`);
   lines.push(`Notes: ${entry.notes || '(blank)'}`);
   return lines.join("\n");
 }
@@ -88,6 +153,7 @@ const ContextPage = () => {
   const { currentUser, selectedAccount } = useContext(UserContext);
   const [combinedText, setCombinedText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [mostRecentCopied, setMostRecentCopied] = useState(false);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [entryCount, setEntryCount] = useState(0);
@@ -171,8 +237,9 @@ const ContextPage = () => {
       if (dateStr === 'Invalid Date' && entry.created) {
         try {
           // Handle the timestamp format that includes random suffix
-          const timestamp = entry.created.split('-')[0]; // Remove the random suffix
-          const date = new Date(timestamp);
+          const lastDashIndex = entry.created.lastIndexOf('-');
+          const cleanTimestamp = lastDashIndex > 10 ? entry.created.substring(0, lastDashIndex) : entry.created;
+          const date = new Date(cleanTimestamp);
           if (!isNaN(date.getTime())) {
             dateStr = date.toLocaleDateString();
           }
@@ -190,9 +257,110 @@ const ContextPage = () => {
   }, [sortedEntries]);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(combinedText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
+    try {
+      if (!combinedText || combinedText.trim().length === 0) {
+        console.log('No text available to copy');
+        return;
+      }
+
+      // Copy to clipboard with error handling
+      navigator.clipboard.writeText(combinedText).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+        console.log('Successfully copied combined text to clipboard');
+      }).catch((error) => {
+        console.error('Failed to copy to clipboard:', error);
+        // Fallback: try to copy using document.execCommand
+        const textArea = document.createElement('textarea');
+        textArea.value = combinedText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+          console.log('Copied using fallback method');
+        } catch (fallbackError) {
+          console.error('Fallback copy also failed:', fallbackError);
+        }
+        document.body.removeChild(textArea);
+      });
+    } catch (error) {
+      console.error('Error in handleCopy:', error);
+    }
+  };
+
+  const handleCopyMostRecent = () => {
+    try {
+      if (!sortedEntries || sortedEntries.length === 0) {
+        console.log('No entries available to copy');
+        return;
+      }
+
+      const mostRecentEntry = sortedEntries[0]; // First entry is most recent due to sorting
+      
+      if (!mostRecentEntry) {
+        console.error('Most recent entry is undefined');
+        return;
+      }
+
+      let dateStr = 'Invalid Date';
+      
+      // Try to use month/day fields first (more reliable) - consistent with main logic
+      if (mostRecentEntry.month && mostRecentEntry.day) {
+        const year = mostRecentEntry.year || new Date().getFullYear();
+        const month = parseInt(mostRecentEntry.month) - 1; // JS months are 0-indexed
+        const day = parseInt(mostRecentEntry.day);
+        const date = new Date(year, month, day);
+        if (!isNaN(date.getTime())) {
+          dateStr = date.toLocaleDateString();
+        }
+      }
+      
+      // Fallback to parsing created timestamp - consistent with main logic
+      if (dateStr === 'Invalid Date' && mostRecentEntry.created) {
+        try {
+          // Handle the timestamp format that includes random suffix
+          const lastDashIndex = mostRecentEntry.created.lastIndexOf('-');
+          const cleanTimestamp = lastDashIndex > 10 ? mostRecentEntry.created.substring(0, lastDashIndex) : mostRecentEntry.created;
+          const date = new Date(cleanTimestamp);
+          if (!isNaN(date.getTime())) {
+            dateStr = date.toLocaleDateString();
+          }
+        } catch (e) {
+          console.error('Error parsing created timestamp:', e);
+        }
+      }
+      
+      // Generate the text to copy
+      const mostRecentText = `=== ${dateStr} ===\n${entryToText(mostRecentEntry)}`;
+      
+      // Copy to clipboard with error handling
+      navigator.clipboard.writeText(mostRecentText).then(() => {
+        setMostRecentCopied(true);
+        setTimeout(() => setMostRecentCopied(false), 1200);
+        console.log('Successfully copied most recent entry:', mostRecentEntry.created);
+      }).catch((error) => {
+        console.error('Failed to copy to clipboard:', error);
+        // Fallback: try to copy using document.execCommand (deprecated but works in some browsers)
+        const textArea = document.createElement('textarea');
+        textArea.value = mostRecentText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setMostRecentCopied(true);
+          setTimeout(() => setMostRecentCopied(false), 1200);
+          console.log('Copied using fallback method');
+        } catch (fallbackError) {
+          console.error('Fallback copy also failed:', fallbackError);
+        }
+        document.body.removeChild(textArea);
+      });
+      
+    } catch (error) {
+      console.error('Error in handleCopyMostRecent:', error);
+    }
   };
 
   const handleClear = () => {
@@ -218,7 +386,6 @@ Day of the Week: Tuesday
 Daily High/Low Taken: Yes
 00:00 Open: Aligned
 8:30 Open: Aligned
-9:30 Open: Aligned
 Macro: Yes
 Judas Swing: Yes
 Silver Bullet: No
@@ -245,9 +412,37 @@ Output format:
 track and show stats. you can share opinions or analysis but keep in minimal`;
 
   const handleCopyPrompt = () => {
-    navigator.clipboard.writeText(llmPrompt);
-    setPromptCopied(true);
-    setTimeout(() => setPromptCopied(false), 1200);
+    try {
+      if (!llmPrompt || llmPrompt.trim().length === 0) {
+        console.log('No prompt available to copy');
+        return;
+      }
+
+      // Copy to clipboard with error handling
+      navigator.clipboard.writeText(llmPrompt).then(() => {
+        setPromptCopied(true);
+        setTimeout(() => setPromptCopied(false), 1200);
+        console.log('Successfully copied prompt to clipboard');
+      }).catch((error) => {
+        console.error('Failed to copy prompt to clipboard:', error);
+        // Fallback: try to copy using document.execCommand
+        const textArea = document.createElement('textarea');
+        textArea.value = llmPrompt;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setPromptCopied(true);
+          setTimeout(() => setPromptCopied(false), 1200);
+          console.log('Copied prompt using fallback method');
+        } catch (fallbackError) {
+          console.error('Fallback copy also failed:', fallbackError);
+        }
+        document.body.removeChild(textArea);
+      });
+    } catch (error) {
+      console.error('Error in handleCopyPrompt:', error);
+    }
   };
 
   // Manual refresh handler - fetches fresh data but respects clear timestamp
@@ -312,6 +507,41 @@ track and show stats. you can share opinions or analysis but keep in minimal`;
                 )}
               </AnimatePresence>
               {copied ? "Copied!" : "Copy to Clipboard"}
+            </button>
+            
+            <button 
+              onClick={handleCopyMostRecent} 
+              disabled={!sortedEntries || sortedEntries.length === 0}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors duration-200 ${
+                !sortedEntries || sortedEntries.length === 0 
+                  ? 'bg-gray-500 text-gray-300 cursor-not-allowed' 
+                  : 'bg-green-600 hover:bg-green-500 text-white'
+              }`}
+            >
+              <AnimatePresence mode="wait">
+                {mostRecentCopied ? (
+                  <motion.div
+                    key="check"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    exit={{ scale: 0 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  >
+                    <CheckIcon className="w-5 h-5 text-green-300" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="clipboard"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    exit={{ scale: 0 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  >
+                    <ClipboardDocumentIcon className="w-5 h-5" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {mostRecentCopied ? "Copied!" : "Copy Most Recent"}
             </button>
             
             <button 

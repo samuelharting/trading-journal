@@ -58,12 +58,13 @@ export default function TapeReadPage() {
       const { db } = await import('../firebase');
       const { collection, addDoc } = await import('firebase/firestore');
       const now = new Date();
+      const createdTimestamp = now.toISOString() + '-' + Math.random().toString(36).slice(2, 8);
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
       await addDoc(entriesCol, {
         title,
         notes,
         screenshots: urls,
-        created: now.toISOString(),
+        created: createdTimestamp,
         tapeReading: true,
         year: now.getFullYear().toString(),
         month: (now.getMonth() + 1).toString(),

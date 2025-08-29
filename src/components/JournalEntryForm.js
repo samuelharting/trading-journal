@@ -76,6 +76,7 @@ function trimFirestoreDoc(doc) {
   const trimmed = trim(doc);
   const size = JSON.stringify(trimmed).length;
   console.log('Firestore doc size:', size);
+
   return trimmed;
 }
 
@@ -100,7 +101,6 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
     dailyHighLowTaken: false,
     aboveBelow0000: false, // false = below, true = above
     aboveBelow0830: false,
-    aboveBelow0930: false,
     macroRange: false,
   });
   const [tradeEnv, setTradeEnv] = useState({
@@ -109,7 +109,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
     manipulation: false,
     smt: false,
   });
-  const [poi, setPoi] = useState('');
+  const [poi, setPoi] = useState([]);
 
   // Add new state for economic release
   const [economicRelease, setEconomicRelease] = useState("");
@@ -211,7 +211,9 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
           })
         );
       } catch (err) {
-        console.error('Storage error', err);
+        console.error('Storage error details:', err);
+        console.error('Error code:', err.code);
+        console.error('Error message:', err.message);
       }
     }
     setUploading(false);
@@ -224,7 +226,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
       ...form,
       ...sessionContext,
       ...tradeEnv,
-      poi,
+      poi: poi.length > 0 ? poi : [],
       economicRelease,
       title: entryType === 'deposit' ? `$${Number(form.pnl).toFixed(2)} Deposit` : form.title, // Auto-generate title for deposits
       pnl: entryType === 'trade' ? Number(form.pnl) : entryType === 'payout' ? -Number(form.pnl) : entryType === 'deposit' ? Number(form.pnl) : 0,
@@ -240,8 +242,8 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
       day: entryDay,
       aboveBelow0000: sessionContext.aboveBelow0000 ? 'above' : 'below',
       aboveBelow0830: sessionContext.aboveBelow0830 ? 'above' : 'below',
-      aboveBelow0930: sessionContext.aboveBelow0930 ? 'above' : 'below',
     });
+    
     if (trimmedEntry && currentUser && selectedAccount) {
       const { db } = await import('../firebase');
       const { collection, addDoc } = await import('firebase/firestore');
@@ -251,6 +253,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
       onSave({ ...trimmedEntry, id: docRef.id });
       setForm(initialState);
       setScreenshots([]);
+      setPoi([]);
     }
     setSubmitting(false);
   };
@@ -542,11 +545,6 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
                      onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0830: v }))}
                      label="Aligned with 8:30 open?"
                    />
-                   <Toggle
-                     value={sessionContext.aboveBelow0930}
-                     onChange={v => setSessionContext(sc => ({ ...sc, aboveBelow0930: v }))}
-                     label="Aligned with 9:30 open?"
-                   />
                                      <Toggle value={sessionContext.macroRange} onChange={v => setSessionContext(sc => ({ ...sc, macroRange: v }))} label="Macro" />
                 </div>
               </motion.div>
@@ -567,18 +565,22 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
               {/* POI Card */}
               <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
                 <div className="flex items-center mb-3">
-                  <span className="text-base font-bold text-blue-300">POI / Bias</span>
+                  <span className="text-base font-bold text-blue-300">POI</span>
                 </div>
-                <div>
-                  <label className="text-blue-300 text-sm font-semibold mb-2">POI</label>
-                  <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                     {poiOptions.map(option => (
                       <button
                         key={option}
                         type="button"
-                        onClick={() => setPoi(poi === option ? '' : option)}
+                        onClick={() => {
+                          setPoi(prevPoi => 
+                            prevPoi.includes(option) 
+                              ? prevPoi.filter(p => p !== option)
+                              : [...prevPoi, option]
+                          );
+                        }}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                          poi === option
+                          poi.includes(option)
                             ? 'bg-blue-600 text-white shadow-lg'
                             : 'bg-neutral-800 text-[#e5e5e5] hover:bg-neutral-700 border border-neutral-600'
                         }`}
@@ -587,8 +589,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
                       </button>
                     ))}
                   </div>
-                </div>
-              </motion.div>
+                </motion.div>
             </div>
 
             {/* Right Column */}

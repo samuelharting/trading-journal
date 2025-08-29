@@ -7,7 +7,7 @@ const colorMap = {
   gray: "bg-neutral-900 hover:bg-neutral-800 border-neutral-700 border-2",
 };
 
-const CalendarBox = ({ label, onClick, color = "gray", pnl, status, delay = 0, tradeCount = 0 }) => (
+const CalendarBox = ({ label, onClick, color = "gray", pnl, status, delay = 0, tradeCount = 0, percentage = 0 }) => (
   <motion.button
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
@@ -23,6 +23,18 @@ const CalendarBox = ({ label, onClick, color = "gray", pnl, status, delay = 0, t
         {pnl > 0 ? "+" : pnl < 0 ? "" : ""}{pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}
       </span>
     </div>
+    
+    {/* Show percentage if there are trades */}
+    {tradeCount > 0 && (
+      <div className={`text-xs mt-1 ${
+        percentage > 0 ? 'text-green-400' : 
+        percentage < 0 ? 'text-red-400' : 
+        'text-gray-400'
+      }`}>
+        ({percentage > 0 ? '+' : ''}{percentage.toFixed(1)}%)
+      </div>
+    )}
+    
     {tradeCount > 0 && (
       <div className="mt-1 text-xs opacity-80">
         {tradeCount} trade{tradeCount !== 1 ? 's' : ''}

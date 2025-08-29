@@ -53,9 +53,20 @@ const HomePage = () => {
     console.log('HomePage user:', currentUser, 'entries:', entries, 'loading:', loading);
   }, [currentUser, entries, loading]);
 
-  // Aggregate P&L and trade counts by month
+  // Aggregate P&L, trade counts, and calculate percentages by month
   const monthData = useMemo(() => {
-    const data = Array(12).fill(null).map(() => ({ pnl: 0, count: 0 }));
+    const data = Array(12).fill(null).map(() => ({ pnl: 0, count: 0, percentage: 0 }));
+    
+    // Calculate starting capital for percentage calculations
+    let startingCapital = 0;
+    entries.forEach(entry => {
+      if (entry.isDeposit) {
+        startingCapital += Number(entry.pnl) || 0;
+      } else if (entry.isPayout) {
+        startingCapital += Number(entry.pnl) || 0; // Already negative
+      }
+    });
+    
     entries.forEach(entry => {
       if (String(entry.year) === String(year)) {
         const idx = parseInt(entry.month, 10) - 1;
@@ -69,6 +80,24 @@ const HomePage = () => {
         }
       }
     });
+    
+    // Calculate percentages for each month
+    data.forEach((month, idx) => {
+      if (month.count > 0 && startingCapital > 0) {
+        month.percentage = (month.pnl / startingCapital) * 100;
+      }
+    });
+    
+    // Debug logging for August
+    if (data[7]) { // August is index 7 (0-based)
+      console.log('📅 HomePage August Debug:', {
+        pnl: data[7].pnl,
+        count: data[7].count,
+        percentage: data[7].percentage,
+        startingCapital: startingCapital
+      });
+    }
+    
     return data;
   }, [entries, year, selectedAccount]);
 
@@ -114,7 +143,7 @@ const HomePage = () => {
             className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-10 w-full"
           >
             {months.map((month, idx) => {
-              const { pnl, count } = monthData[idx];
+              const { pnl, count, percentage } = monthData[idx];
               let color = "gray", status = "no-trades";
               if (count > 0) {
                 if (pnl > 0) { color = "green"; status = "trades"; }
@@ -129,6 +158,7 @@ const HomePage = () => {
                   pnl={pnl}
                   status={status}
                   tradeCount={count}
+                  percentage={percentage}
                   onClick={() => navigate(`/month/${year}/${idx + 1}`)}
                   delay={idx * 0.03}
                 />

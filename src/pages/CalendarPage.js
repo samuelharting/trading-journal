@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { UserContext } from "../App";
+import { getTradingPerformance } from '../statsUtils';
 
 const months = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
 ];
+
 
 const HomePage = () => {
   const { currentUser, selectedAccount } = useContext(UserContext);
@@ -26,59 +28,53 @@ const HomePage = () => {
         const data = snap.docs.map(doc => doc.data());
         setEntries(data);
         
-        // Calculate monthly goal progress for each month
+        // Calculate monthly goal progress for each month using statsUtils
         const progress = {};
         months.forEach((_, monthIdx) => {
           const monthNum = monthIdx + 1;
           
-          // Get entries for this month
-          const monthEntries = data.filter(e => 
-            String(e.year) === String(year) && 
-            String(e.month) === String(monthNum) &&
-            !e.isDeposit && 
-            !e.isPayout && 
-            !e.isTapeReading &&
-            e.pnl !== undefined &&
-            e.pnl !== null &&
-            e.pnl !== ""
-          );
+          // Use the same logic as Summary page
+          const monthPerformance = getTradingPerformance(data, year, monthNum);
           
-          const monthlyPnl = monthEntries.reduce((sum, e) => sum + (Number(e.pnl) || 0), 0);
-          
-          // Calculate starting balance for this month
-          const monthStart = new Date(year, monthIdx, 1);
-          const entriesBeforeMonth = data.filter(e => {
-            if (e.year && e.month && e.day) {
-              const entryDate = new Date(e.year, e.month - 1, e.day);
-              return entryDate < monthStart;
-            } else if (e.created) {
-              const entryDate = new Date(e.created.split('-')[0]);
-              return entryDate < monthStart;
+          if (monthPerformance) {
+            const tradeCount = data.filter(e => 
+              String(e.year) === String(year) && 
+              String(e.month) === String(monthNum) &&
+              !e.isDeposit && 
+              !e.isPayout && 
+              !e.isTapeReading &&
+              e.pnl !== undefined &&
+              e.pnl !== null &&
+              e.pnl !== ""
+            ).length;
+            
+            progress[monthNum] = {
+              pnl: monthPerformance.pnl,
+              percentage: monthPerformance.percentage,
+              progress: monthPerformance.progressToward20Percent,
+              hasData: monthPerformance.hasTrades, // Map hasTrades to hasData
+              tradeCount: tradeCount
+            };
+            
+            // Debug logging for August
+            if (monthNum === 8) {
+              console.log('📅 CalendarPage August Debug:', {
+                monthPerformance,
+                hasData: monthPerformance.hasTrades,
+                pnl: monthPerformance.pnl,
+                percentage: monthPerformance.percentage,
+                tradeCount: tradeCount
+              });
             }
-            return false;
-          });
-          
-          let startingBalance = 0;
-          entriesBeforeMonth.forEach(e => {
-            if (e.isDeposit) {
-              startingBalance += Number(e.pnl) || 0;
-            } else if (e.isPayout) {
-              startingBalance += Number(e.pnl) || 0;
-            } else if (!e.isTapeReading) {
-              startingBalance += Number(e.pnl) || 0;
-            }
-          });
-          
-          const baseBalance = Math.max(startingBalance, 100);
-          const monthlyPercentage = baseBalance > 0 ? (monthlyPnl / baseBalance) * 100 : 0;
-          const progressPercentage = Math.min(100, Math.max(0, (monthlyPercentage / 20) * 100));
-          
-          progress[monthNum] = {
-            pnl: monthlyPnl,
-            percentage: monthlyPercentage,
-            progress: progressPercentage,
-            hasData: monthEntries.length > 0
-          };
+          } else {
+            progress[monthNum] = {
+              pnl: 0,
+              percentage: 0,
+              progress: 0,
+              hasData: false,
+              tradeCount: 0
+            };
+          }
         });
         
         setMonthlyGoalProgress(progress);
@@ -97,6 +93,18 @@ const HomePage = () => {
           const monthNum = idx + 1;
           const goalData = monthlyGoalProgress[monthNum];
           
+          // Debug logging for August
+          if (monthNum === 8 && goalData) {
+            console.log('📅 CalendarPage August Display Debug:', {
+              monthNum,
+              goalData,
+              pnl: goalData.pnl,
+              percentage: goalData.percentage,
+              hasData: goalData.hasData,
+              tradeCount: goalData.tradeCount
+            });
+          }
+          
           return (
             <button
               key={month}
@@ -107,28 +115,51 @@ const HomePage = () => {
                 <div className="text-lg font-semibold">{month}</div>
                 
                 {/* Goal Progress Indicator */}
-                {goalData && goalData.hasData && (
+                {goalData && (
                   <div className="mt-2">
-                    <div className="flex justify-between items-center text-xs text-gray-300 mb-1">
-                      <span>Goal: 20%</span>
-                      <span>{goalData.progress.toFixed(0)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-600 rounded-full h-1.5">
-                      <div 
-                        className={`h-full transition-all duration-500 ease-out rounded-full ${
-                          goalData.percentage >= 20 ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 
-                          goalData.percentage >= 10 ? 'bg-gradient-to-r from-yellow-400 to-orange-500' : 
-                          'bg-gradient-to-r from-blue-400 to-blue-500'
-                        }`}
-                        style={{ width: `${goalData.progress}%` }}
-                      />
-                    </div>
+                    {/* Always show P&L and percentage if they exist */}
                     <div className={`text-xs mt-1 ${
                       goalData.pnl > 0 ? 'text-green-400' : 
                       goalData.pnl < 0 ? 'text-red-400' : 'text-gray-400'
                     }`}>
                       {goalData.pnl > 0 ? '+' : ''}{goalData.pnl.toFixed(2)}
                     </div>
+                    
+                    {/* Always show percentage - even if it's 0 */}
+                    <div className={`text-xs ${
+                      goalData.percentage > 0 ? 'text-green-400' : 
+                      goalData.percentage < 0 ? 'text-red-400' : 'text-gray-400'
+                    }`}>
+                      ({goalData.percentage > 0 ? '+' : ''}{goalData.percentage.toFixed(1)}%)
+                      {/* Debug: Raw value = {JSON.stringify(goalData.percentage)} */}
+                    </div>
+                    
+                    {/* Always show trade count if it exists */}
+                    {goalData.tradeCount !== undefined && (
+                      <div className="text-xs text-gray-400 mt-1">
+                        {goalData.tradeCount} trade{goalData.tradeCount !== 1 ? 's' : ''}
+                      </div>
+                    )}
+                    
+                    {/* Only show progress bar if hasData is true */}
+                    {goalData.hasData && (
+                      <>
+                        <div className="flex justify-between items-center text-xs text-gray-300 mb-1 mt-2">
+                          <span>Goal: 20%</span>
+                          <span>{goalData.progress.toFixed(0)}%</span>
+                        </div>
+                        <div className="w-full bg-gray-600 rounded-full h-1.5">
+                          <div 
+                            className={`h-full transition-all duration-500 ease-out rounded-full ${
+                              goalData.percentage >= 20 ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 
+                              goalData.percentage >= 10 ? 'bg-gradient-to-r from-yellow-400 to-orange-500' : 
+                              'bg-gradient-to-r from-blue-400 to-blue-500'
+                            }`}
+                            style={{ width: `${goalData.progress}%` }}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
                 

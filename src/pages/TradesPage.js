@@ -14,6 +14,7 @@ const TradesPage = () => {
   const { setShowHeader } = useHeader();
   const [groupedImages, setGroupedImages] = useState([]);
   const [allImages, setAllImages] = useState([]);
+  const [allEntries, setAllEntries] = useState([]); // For navigation through all entries
   const [favorites, setFavorites] = useState({});
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -38,26 +39,33 @@ const TradesPage = () => {
       const snap = await getDocs(entriesCol);
       const allEntries = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).sort((a, b) => {
         // Clean timestamps by removing the random suffix
-        const cleanA = a.created ? a.created.split('-').slice(0, -1).join('-') : '';
-        const cleanB = b.created ? b.created.split('-').slice(0, -1).join('-') : '';
+        const getCleanTimestamp = (created) => {
+          if (!created) return '';
+          const lastDashIndex = created.lastIndexOf('-');
+          return lastDashIndex > 10 ? created.substring(0, lastDashIndex) : created;
+        };
+        const cleanA = getCleanTimestamp(a.created);
+        const cleanB = getCleanTimestamp(b.created);
         return new Date(cleanB) - new Date(cleanA);
       });
       // Fetch favorites
       const favDoc = await getDoc(doc(db, 'favorites', currentUser.uid + '_' + selectedAccount.id));
       setFavorites(favDoc.exists() ? favDoc.data().data : {});
       
-      // Build grouped images array
+      // Build grouped images array AND navigation array
       const grouped = [];
-      const allImagesArray = [];
+      const allImagesArray = []; // For navigation - contains individual images AND placeholder entries
       
       allEntries.forEach(entry => {
         // For entries with screenshots (trades and tape readings)
         if (entry.screenshots && entry.screenshots.length) {
-          const entryImages = entry.screenshots.map(src => ({
+          const entryImages = entry.screenshots.map((src, imageIndex) => ({
             src,
             created: entry.created,
             entry: entry,
-            link: `/day/${entry.month}/${entry.day}`
+            link: `/day/${entry.month}/${entry.day}`,
+            imageIndex: imageIndex, // Track which image within the entry
+            isIndividualImage: true
           }));
           
           grouped.push({
@@ -67,12 +75,21 @@ const TradesPage = () => {
             firstImage: entryImages[0]
           });
           
-          // Add to flat array for navigation
+          // Add ALL individual images to navigation array
           allImagesArray.push(...entryImages);
-        } 
+        }
         // For deposits and payouts (create placeholder)
         else if (entry.isDeposit || entry.isPayout) {
-          // Create a placeholder object for deposits/payouts
+          const placeholderItem = {
+            src: null,
+            created: entry.created,
+            entry: entry,
+            link: `/day/${entry.month}/${entry.day}`,
+            isIndividualImage: false,
+            isDeposit: entry.isDeposit,
+            isPayout: entry.isPayout
+          };
+          
           grouped.push({
             entry: entry,
             images: [],
@@ -80,38 +97,75 @@ const TradesPage = () => {
             isDeposit: entry.isDeposit,
             isPayout: entry.isPayout
           });
+          
+          // Add placeholder to navigation array
+          allImagesArray.push(placeholderItem);
+        }
+        // For trades/tape readings without screenshots (still show them with placeholder)
+        else if (!entry.isDeposit && !entry.isPayout) {
+          const placeholderItem = {
+            src: null,
+            created: entry.created,
+            entry: entry,
+            link: `/day/${entry.month}/${entry.day}`,
+            isIndividualImage: false,
+            isTrade: !entry.tapeReading,
+            isTapeReading: entry.tapeReading
+          };
+          
+          grouped.push({
+            entry: entry,
+            images: [],
+            totalImages: 0,
+            isTrade: !entry.tapeReading,
+            isTapeReading: entry.tapeReading
+          });
+          
+          // Add placeholder to navigation array
+          allImagesArray.push(placeholderItem);
         }
       });
       
       // Sort by creation date (newest first) for proper grid flow
+      const getCleanTimestamp = (created) => {
+        if (!created) return '';
+        const lastDashIndex = created.lastIndexOf('-');
+        return lastDashIndex > 10 ? created.substring(0, lastDashIndex) : created;
+      };
+      
       grouped.sort((a, b) => {
-        // Clean timestamps by removing the random suffix
-        const cleanA = a.entry.created ? a.entry.created.split('-').slice(0, -1).join('-') : '';
-        const cleanB = b.entry.created ? b.entry.created.split('-').slice(0, -1).join('-') : '';
+        const cleanA = getCleanTimestamp(a.entry.created);
+        const cleanB = getCleanTimestamp(b.entry.created);
         return new Date(cleanB) - new Date(cleanA);
       });
       allImagesArray.sort((a, b) => {
-        // Clean timestamps by removing the random suffix
-        const cleanA = a.created ? a.created.split('-').slice(0, -1).join('-') : '';
-        const cleanB = b.created ? b.created.split('-').slice(0, -1).join('-') : '';
+        const cleanA = getCleanTimestamp(a.created);
+        const cleanB = getCleanTimestamp(b.created);
         return new Date(cleanB) - new Date(cleanA);
       });
       
-      // Debug: Log the first few entries to see what's different
-      console.log('First 3 grouped entries:', JSON.stringify(grouped.slice(0, 3).map(g => ({
-        created: g.entry.created,
-        month: g.entry.month,
-        day: g.entry.day,
-        screenshots: g.entry.screenshots?.length,
-        entryKeys: Object.keys(g.entry),
-        fullEntry: g.entry
-      })), null, 2));
+      // Debug: Log detailed stats
+      console.log('TradesPage - Total entries:', allEntries.length, 'Grouped:', grouped.length);
+      console.log('TradesPage - Entries with screenshots:', allEntries.filter(e => e.screenshots && e.screenshots.length > 0).length);
+      console.log('TradesPage - Sample entry:', allEntries[0] ? {
+        screenshots: allEntries[0].screenshots,
+        screenshotsLength: allEntries[0].screenshots?.length,
+        isDeposit: allEntries[0].isDeposit,
+        isPayout: allEntries[0].isPayout,
+        tapeReading: allEntries[0].tapeReading,
+        created: allEntries[0].created,
+        month: allEntries[0].month,
+        day: allEntries[0].day
+      } : 'No entries');
       
       setGroupedImages(grouped);
       setAllImages(allImagesArray);
+      setAllEntries(allEntries); // Store all entries for navigation
     };
     fetchData();
   }, [currentUser, selectedAccount]);
+
+
 
   // Reset filters and ensure header is shown when component unmounts
   useEffect(() => {
@@ -135,25 +189,33 @@ const TradesPage = () => {
     await setDoc(doc(db, 'favorites', currentUser.uid + '_' + selectedAccount.id), { data: sanitized });
   };
 
-  const openImageViewer = (image, index) => {
+  const openImageViewer = (image, entry) => {
+    // Find the index of this specific image in the allImages array
+    const imageIndex = allImages.findIndex(item => 
+      item.entry.created === entry.created && 
+      item.src === image.src
+    );
     setSelectedImage(image);
-    setSelectedImageIndex(index);
-    setTradeEntry(image.entry);
+    setSelectedImageIndex(imageIndex >= 0 ? imageIndex : 0);
+    setTradeEntry(entry);
     setShowHeader(false);
   };
   
   const openEntryDetails = (entry) => {
-    // Create a mock image object for deposits/payouts
-    if (entry.isDeposit || entry.isPayout) {
-      const mockImage = {
-        src: null, // No image for deposits/payouts
-        entry: entry
-      };
-      setSelectedImage(mockImage);
-      setSelectedImageIndex(-1); // Special index for non-navigable entries
-      setTradeEntry(entry);
-      setShowHeader(false);
-    }
+    // Find the index of this entry's placeholder in the allImages array
+    const entryIndex = allImages.findIndex(item => 
+      item.entry.created === entry.created && 
+      item.src === null
+    );
+    // Create a mock image object for deposits/payouts/trades without screenshots
+    const mockImage = {
+      src: null, // No image for these entries
+      entry: entry
+    };
+    setSelectedImage(mockImage);
+    setSelectedImageIndex(entryIndex >= 0 ? entryIndex : 0);
+    setTradeEntry(entry);
+    setShowHeader(false);
   };
 
   const closeImageViewer = () => {
@@ -168,13 +230,27 @@ const TradesPage = () => {
     if (direction === 'prev') {
       const newIndex = selectedImageIndex > 0 ? selectedImageIndex - 1 : allImages.length - 1;
       setSelectedImageIndex(newIndex);
-      setSelectedImage(allImages[newIndex]);
-      setTradeEntry(allImages[newIndex].entry);
+      const imageItem = allImages[newIndex];
+      
+      // Set the selected image directly from the navigation array
+      setSelectedImage({
+        src: imageItem.src, // Can be null for placeholders
+        entry: imageItem.entry,
+        imageIndex: imageItem.imageIndex || 0
+      });
+      setTradeEntry(imageItem.entry);
     } else {
       const newIndex = selectedImageIndex < allImages.length - 1 ? selectedImageIndex + 1 : 0;
       setSelectedImageIndex(newIndex);
-      setSelectedImage(allImages[newIndex]);
-      setTradeEntry(allImages[newIndex].entry);
+      const imageItem = allImages[newIndex];
+      
+      // Set the selected image directly from the navigation array
+      setSelectedImage({
+        src: imageItem.src, // Can be null for placeholders
+        entry: imageItem.entry,
+        imageIndex: imageItem.imageIndex || 0
+      });
+      setTradeEntry(imageItem.entry);
     }
   };
 
@@ -205,15 +281,54 @@ const TradesPage = () => {
     if (!groupedImages.length) return;
     
     const filtered = groupedImages.filter(group => {
-      const entryYear = group.entry.year;
-      const entryMonth = group.entry.month;
+      // First try to use the month/day/year fields (primary approach)
+      if (group.entry.month && group.entry.day) {
+        const entryYear = group.entry.year || new Date().getFullYear().toString();
+        const entryMonth = group.entry.month;
+        
+        return (
+          entryYear.toString() === selectedYear && 
+          entryMonth.toString() === selectedMonth
+        );
+      }
       
-      return (
-        entryYear === selectedYear && 
-        entryMonth === selectedMonth
-      );
+      // Fallback: parse from created timestamp if month/day fields don't exist
+      if (group.entry.created) {
+        try {
+          // Handle the timestamp format that includes random suffix
+          // Format: "2025-01-06T03:43:47.677Z-u38k53"
+          const lastDashIndex = group.entry.created.lastIndexOf('-');
+          if (lastDashIndex > 10) { // Make sure it's not a date dash
+            const isoString = group.entry.created.substring(0, lastDashIndex);
+            const date = new Date(isoString);
+            if (!isNaN(date.getTime())) {
+              const entryYear = date.getFullYear().toString();
+              const entryMonth = (date.getMonth() + 1).toString(); // JS months are 0-indexed
+              
+              return (
+                entryYear === selectedYear && 
+                entryMonth === selectedMonth
+              );
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing date for filter:', group.entry.created, e);
+        }
+      }
+      
+      // If we can't determine the date, exclude from results
+      return false;
     });
     
+    console.log('TradesPage Filter:', groupedImages.length, '→', filtered.length, `(${selectedYear}-${selectedMonth})`);
+    if (filtered.length === 0 && groupedImages.length > 0) {
+      console.log('Filter debug - First group entry date info:', {
+        month: groupedImages[0]?.entry.month,
+        day: groupedImages[0]?.entry.day,
+        year: groupedImages[0]?.entry.year,
+        created: groupedImages[0]?.entry.created
+      });
+    }
     setFilteredGroups(filtered);
   }, [groupedImages, selectedYear, selectedMonth]);
 
@@ -325,7 +440,7 @@ const TradesPage = () => {
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ scale: 1.08 }}
               transition={{ duration: 0.3, delay: groupIdx * 0.03 }}
-              className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 flex flex-col items-center border border-white/20 shadow-xl cursor-pointer group w-full"
+              className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 flex flex-col items-center border border-white/20 shadow-xl cursor-pointer group w-full h-full min-h-[280px]"
             >
               {/* Deposit/Payout or Screenshot Content */}
               {group.isDeposit ? (
@@ -344,7 +459,7 @@ const TradesPage = () => {
                 >
                   <div className="text-4xl font-bold text-red-400">$</div>
                 </div>
-              ) : (
+              ) : group.totalImages > 0 ? (
                 // Regular screenshot entry
                 <>
                   {/* Favorite Star */}
@@ -387,8 +502,7 @@ const TradesPage = () => {
                           }}
                           transition={{ type: 'spring', stiffness: 300 }}
                           onClick={() => {
-                            const globalIndex = allImages.findIndex(allImg => allImg.src === group.firstImage.src);
-                            openImageViewer(group.firstImage, globalIndex);
+                            openImageViewer(group.firstImage, group.entry);
                           }}
                           style={{ cursor: "pointer" }}
                         />
@@ -430,8 +544,7 @@ const TradesPage = () => {
                               }}
                               transition={{ type: 'spring', stiffness: 300 }}
                               onClick={() => {
-                                const globalIndex = allImages.findIndex(allImg => allImg.src === img.src);
-                                openImageViewer(img, globalIndex);
+                                openImageViewer(img, group.entry);
                               }}
                               style={{ cursor: "pointer" }}
                             />
@@ -456,14 +569,26 @@ const TradesPage = () => {
                     )}
                   </div>
                 </>
+              ) : (
+                // Trade/Tape reading without screenshots - show placeholder
+                <div 
+                  className="relative w-full aspect-square bg-black/80 rounded-xl flex items-center justify-center cursor-pointer"
+                  onClick={() => openEntryDetails(group.entry)}
+                >
+                  <div className="text-4xl font-bold text-neutral-400">
+                    {group.isTapeReading ? '📊' : '📈'}
+                  </div>
+                </div>
               )}
 
               {/* Title and Date */}
-              <div className="mt-2 text-center w-full">
-                <div className="text-sm text-white/90 font-medium mb-1 line-clamp-1 min-h-[20px] flex items-center justify-center">
-                  {group.entry.title || ''}
+              <div className="mt-auto pt-2 text-center w-full">
+                <div className="text-sm text-white/90 font-medium mb-1 h-[40px] flex items-center justify-center overflow-hidden">
+                  <div className="truncate max-w-full px-1 leading-tight" title={group.entry.title || ''}>
+                    {group.entry.title || ''}
+                  </div>
                 </div>
-                <div className="text-xs text-neutral-500">
+                <div className="text-xs text-neutral-500 h-[16px] flex items-center justify-center">
                   {(() => {
                     // Try to use month/day fields first (more reliable)
                     if (group.entry && group.entry.month && group.entry.day) {
@@ -480,10 +605,14 @@ const TradesPage = () => {
                     if (group.entry.created) {
                       try {
                         // Handle the timestamp format that includes random suffix
-                        const timestamp = group.entry.created.split('-')[0]; // Remove the random suffix
-                        const date = new Date(timestamp);
-                        if (!isNaN(date.getTime())) {
-                          return date.toLocaleDateString();
+                        // Format: "2025-01-06T03:43:47.677Z-u38k53"
+                        const lastDashIndex = group.entry.created.lastIndexOf('-');
+                        if (lastDashIndex > 10) { // Make sure it's not a date dash
+                          const isoString = group.entry.created.substring(0, lastDashIndex);
+                          const date = new Date(isoString);
+                          if (!isNaN(date.getTime())) {
+                            return date.toLocaleDateString();
+                          }
                         }
                       } catch (e) {
                         console.error('Error parsing date:', e);
@@ -532,39 +661,35 @@ const TradesPage = () => {
 
             {/* Image Container with Navigation */}
             <div className="flex items-center justify-center w-full h-full relative">
-              {selectedImageIndex >= 0 && (
-                <>
-                  {/* Prev Arrow */}
-                  <button
-                    onClick={e => { e.stopPropagation(); navigateImage('prev'); }}
-                    className="absolute left-6 z-50 bg-black bg-opacity-90 text-white rounded-full p-4 hover:bg-opacity-100 hover:scale-110 transition-all duration-200 shadow-lg border border-white/20"
-                  >
-                    <ChevronLeftIcon className="w-10 h-10" />
-                  </button>
+              {/* Navigation arrows - always show */}
+              <button
+                onClick={e => { e.stopPropagation(); navigateImage('prev'); }}
+                className="absolute left-6 z-50 bg-black bg-opacity-90 text-white rounded-full p-4 hover:bg-opacity-100 hover:scale-110 transition-all duration-200 shadow-lg border border-white/20"
+              >
+                <ChevronLeftIcon className="w-10 h-10" />
+              </button>
 
-                  {/* Image */}
-                  <motion.img
-                    src={selectedImage.src}
-                    alt="Trade Screenshot"
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.8, opacity: 0 }}
-                    className="w-full h-full object-cover"
-                    onClick={e => e.stopPropagation()}
-                  />
+              <button
+                onClick={e => { e.stopPropagation(); navigateImage('next'); }}
+                className="absolute right-6 z-50 bg-black bg-opacity-90 text-white rounded-full p-4 hover:bg-opacity-100 hover:scale-110 transition-all duration-200 shadow-lg border border-white/20"
+              >
+                <ChevronRightIcon className="w-10 h-10" />
+              </button>
 
-                  {/* Next Arrow */}
-                  <button
-                    onClick={e => { e.stopPropagation(); navigateImage('next'); }}
-                    className="absolute right-6 z-50 bg-black bg-opacity-90 text-white rounded-full p-4 hover:bg-opacity-100 hover:scale-110 transition-all duration-200 shadow-lg border border-white/20"
-                  >
-                    <ChevronRightIcon className="w-10 h-10" />
-                  </button>
-                </>
-              )}
-              
-              {/* Deposit/Payout Placeholder */}
-              {selectedImageIndex === -1 && (
+              {/* Content - either image or placeholder */}
+              {selectedImage.src ? (
+                /* Image */
+                <motion.img
+                  src={selectedImage.src}
+                  alt="Trade Screenshot"
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.8, opacity: 0 }}
+                  className="w-full h-full object-cover"
+                  onClick={e => e.stopPropagation()}
+                />
+              ) : (
+                /* Placeholder for deposits/payouts/trades without images */
                 <motion.div 
                   className="w-64 h-64 rounded-xl flex items-center justify-center"
                   initial={{ scale: 0.8, opacity: 0 }}
@@ -575,7 +700,11 @@ const TradesPage = () => {
                     <div className="text-8xl font-bold text-blue-400">$</div>
                   ) : tradeEntry.isPayout ? (
                     <div className="text-8xl font-bold text-red-400">$</div>
-                  ) : null}
+                  ) : tradeEntry.tapeReading ? (
+                    <div className="text-8xl font-bold text-neutral-400">📊</div>
+                  ) : (
+                    <div className="text-8xl font-bold text-neutral-400">📈</div>
+                  )}
                 </motion.div>
               )}
             </div>
