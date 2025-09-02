@@ -18,63 +18,24 @@ import Spinner from '../components/MatrixLoader';
 const getClearTimestampKey = (userId, accountId) => `contextClearTimestamp_${userId}_${accountId}`;
 
 function entryToText(entry) {
+  // Helpers to normalize display values
+  const toYesNo = (value) => {
+    if (value === true || value === 'true') return 'Yes';
+    if (value === false || value === 'false') return 'No';
+    return 'N/A';
+  };
+  const toAligned = (value) => {
+    if (value === 'above' || value === true || value === 'true') return 'Aligned';
+    if (value === 'below' || value === false || value === 'false') return 'Not Aligned';
+    return 'N/A';
+  };
+
   // Add account information at the top for all entries
   let lines = [];
   if (entry.accountName) {
     lines.push(`Account: ${entry.accountName}`);
   }
-  
-  // Handle tape reading entries
-  if (entry.tapeReading) {
-    lines.push(`Title: ${entry.title || '(blank)'}`);
-    
-    // Auto-calculate day of the week from the date for tape readings too
-    let dayOfWeek = '(blank)';
-    
-    // Try to use month/day fields first (more reliable)
-    if (entry.month && entry.day) {
-      const year = entry.year || new Date().getFullYear();
-      const month = parseInt(entry.month) - 1; // JS months are 0-indexed
-      const day = parseInt(entry.day);
-      const date = new Date(year, month, day);
-      if (!isNaN(date.getTime())) {
-        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        dayOfWeek = days[date.getDay()];
-      }
-    }
-    
-    // Fallback to parsing created timestamp
-    if (dayOfWeek === '(blank)' && entry.created) {
-      try {
-        // Handle the timestamp format that includes random suffix
-        const lastDashIndex = entry.created.lastIndexOf('-');
-        if (lastDashIndex > 10) { // Make sure it's not a date dash
-          const isoString = entry.created.substring(0, lastDashIndex);
-          const date = new Date(isoString);
-          if (!isNaN(date.getTime())) {
-            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            dayOfWeek = days[date.getDay()];
-          }
-        }
-      } catch (e) {
-        console.error('Error parsing date:', e);
-      }
-    }
-    lines.push(`Day of the Week: ${dayOfWeek}`);
-    
-    // Handle POI for tape readings too
-    let poiText = '(blank)';
-    if (entry.poi) {
-      if (Array.isArray(entry.poi)) {
-        poiText = entry.poi.length > 0 ? entry.poi.join(', ') : '(blank)';
-      } else {
-        poiText = entry.poi;
-      }
-    }
-    lines.push(`POI: ${poiText}`);
-    lines.push(`Notes: ${entry.notes || '(blank)'}`);
-    return lines.join("\n");
-  }
+
   // Handle deposit entries
   if (entry.isDeposit) {
     lines.push(`Account Balance: $${entry.accountBalance || 0} - ${entry.notes || '(blank)'}`);
@@ -85,18 +46,19 @@ function entryToText(entry) {
     lines.push(`Payout: $${Math.abs(entry.pnl || 0)} - Account Balance: $${entry.accountBalance || 0} - ${entry.notes || '(blank)'}`);
     return lines.join("\n");
   }
-  // Modern trade entry fields - show ALL fields regardless of selection
-  lines.push(`Title: ${entry.title || '(blank)'}`);
-  lines.push(`Ticker: ${entry.tickerTraded || '(blank)'}`);
-  lines.push(`Entry Time: ${entry.entryTime || '(blank)'}`);
-  lines.push(`Exit Time: ${entry.exitTime || '(blank)'}`);
-  lines.push(`Duration: ${entry.duration || '(blank)'}`);
-  lines.push(`P&L: ${entry.pnl !== undefined && entry.pnl !== '' ? entry.pnl : '(blank)'}`);
-  lines.push(`R:R: ${entry.rr !== undefined && entry.rr !== '' ? entry.rr : '(blank)'}`);
-  lines.push(`Economic Release: ${entry.economicRelease || '(blank)'}`);
+  // Trade or Tape Reading entries - show ALL fields regardless of type or selection
+  // Note: Treat both trades and tape reading entries the same for stats output
+  lines.push(`Title: ${entry.title || 'N/A'}`);
+  lines.push(`Ticker: ${entry.tickerTraded || 'N/A'}`);
+  lines.push(`Entry Time: ${entry.entryTime || 'N/A'}`);
+  lines.push(`Exit Time: ${entry.exitTime || 'N/A'}`);
+  lines.push(`Duration: ${entry.duration || 'N/A'}`);
+  lines.push(`P&L: ${entry.pnl !== undefined && entry.pnl !== '' ? entry.pnl : 'N/A'}`);
+  lines.push(`R:R: ${entry.rr !== undefined && entry.rr !== '' ? entry.rr : 'N/A'}`);
+  lines.push(`Economic Release: ${entry.economicRelease || 'N/A'}`);
   
   // Auto-calculate day of the week from the date
-  let dayOfWeek = '(blank)';
+  let dayOfWeek = 'N/A';
   
   // Try to use month/day fields first (more reliable)
   if (entry.month && entry.day) {
@@ -130,28 +92,28 @@ function entryToText(entry) {
   lines.push(`Day of the Week: ${dayOfWeek}`);
   
   // Session Context - show ALL fields with their actual values
-  lines.push(`Daily High/Low Taken: ${entry.dailyHighLowTaken === true || entry.dailyHighLowTaken === 'true' ? 'Yes' : 'No'}`);
-  lines.push(`00:00 Open: ${entry.aboveBelow0000 === 'above' ? 'Aligned' : 'Not Aligned'}`);
-  lines.push(`8:30 Open: ${entry.aboveBelow0830 === 'above' ? 'Aligned' : 'Not Aligned'}`);
-  lines.push(`Macro: ${entry.macroRange === true || entry.macroRange === 'true' ? 'Yes' : 'No'}`);
+  lines.push(`Daily High/Low Taken: ${toYesNo(entry.dailyHighLowTaken)}`);
+  lines.push(`00:00 Open: ${toAligned(entry.aboveBelow0000)}`);
+  lines.push(`8:30 Open: ${toAligned(entry.aboveBelow0830)}`);
+  lines.push(`Macro: ${toYesNo(entry.macroRange)}`);
   
   // Trade Environment - show ALL fields with their actual values
-  lines.push(`Judas Swing: ${entry.judasSwing === true || entry.judasSwing === 'true' ? 'Yes' : 'No'}`);
-  lines.push(`Silver Bullet: ${entry.silverBullet === true || entry.silverBullet === 'true' ? 'Yes' : 'No'}`);
-  lines.push(`Clear Manipulation: ${entry.manipulation === true || entry.manipulation === 'true' ? 'Yes' : 'No'}`);
-  lines.push(`SMT: ${entry.smt === true || entry.smt === 'true' ? 'Yes' : 'No'}`);
+  lines.push(`Judas Swing: ${toYesNo(entry.judasSwing)}`);
+  lines.push(`Silver Bullet: ${toYesNo(entry.silverBullet)}`);
+  lines.push(`Clear Manipulation: ${toYesNo(entry.manipulation)}`);
+  lines.push(`SMT: ${toYesNo(entry.smt)}`);
   
   // Handle POI as either array or string for backward compatibility
-  let poiText = '(blank)';
+  let poiText = 'N/A';
   if (entry.poi) {
     if (Array.isArray(entry.poi)) {
-      poiText = entry.poi.length > 0 ? entry.poi.join(', ') : '(blank)';
+      poiText = entry.poi.length > 0 ? entry.poi.join(', ') : 'N/A';
     } else {
       poiText = entry.poi;
     }
   }
   lines.push(`POI: ${poiText}`);
-  lines.push(`Notes: ${entry.notes || '(blank)'}`);
+  lines.push(`Notes: ${entry.notes || 'N/A'}`);
   return lines.join("\n");
 }
 
