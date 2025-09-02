@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useContext } from "react";
 import { PlusIcon, TrashIcon, PencilIcon, PhotoIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { BookOpenIcon } from '@heroicons/react/24/outline';
 import { UserContext } from '../App';
-import { storage } from '../firebase';
+import { storage, db } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // Notebook data is stored at the user level (not account level) so it's shared across all accounts
@@ -34,7 +35,7 @@ function loadNotebook(user) {
   return data;
 }
 
-function saveNotebook(user, data) {
+async function saveNotebook(user, data) {
   if (!user) {
     console.error('[NOTEBOOK] saveNotebook: No user provided, cannot save');
     return;
@@ -42,9 +43,11 @@ function saveNotebook(user, data) {
   
   const key = getNotebookKey(user);
   try {
-    const jsonData = JSON.stringify(data);
+    const payload = { sections: data, updatedAt: Date.now() };
+    const jsonData = JSON.stringify(payload.sections);
     localStorage.setItem(key, jsonData);
-    console.log('[NOTEBOOK] saveNotebook:', { user, key, dataLength: data.length, data });
+    localStorage.setItem(`${key}-updatedAt`, String(payload.updatedAt));
+    console.log('[NOTEBOOK] saveNotebook:', { user, key, dataLength: data.length, updatedAt: payload.updatedAt });
     
     // Verify the save worked
     const verify = localStorage.getItem(key);
@@ -52,6 +55,15 @@ function saveNotebook(user, data) {
       console.error('[NOTEBOOK] saveNotebook: Save verification failed!');
     } else {
       console.log('[NOTEBOOK] saveNotebook: Save verified successfully');
+    }
+
+    // Persist to Firestore (user-level)
+    try {
+      const userDocRef = doc(db, 'notebooks', user);
+      await setDoc(userDocRef, payload, { merge: true });
+      console.log('[NOTEBOOK] Firestore save complete');
+    } catch (err) {
+      console.error('[NOTEBOOK] Firestore save error:', err);
     }
   } catch (error) {
     console.error('[NOTEBOOK] saveNotebook: Error saving data:', error);
@@ -86,16 +98,49 @@ export default function NotebookPage() {
       const loadedSections = loadNotebook(currentUser.uid);
       const loadedSelectedSection = localStorage.getItem(getSectionKey(currentUser.uid));
       const loadedSelectedPage = localStorage.getItem(getPageKey(currentUser.uid));
-      
+      const localUpdatedAt = Number(localStorage.getItem(`${getNotebookKey(currentUser.uid)}-updatedAt`) || '0');
+
       setSections(loadedSections);
       setSelectedSection(loadedSelectedSection);
       setSelectedPage(loadedSelectedPage);
-      
-      console.log('[NOTEBOOK] Loaded data for user:', currentUser.uid, {
+
+      console.log('[NOTEBOOK] Loaded local data for user:', currentUser.uid, {
         sections: loadedSections,
         selectedSection: loadedSelectedSection,
-        selectedPage: loadedSelectedPage
+        selectedPage: loadedSelectedPage,
+        localUpdatedAt
       });
+
+      // Also load from Firestore and reconcile newest
+      (async () => {
+        try {
+          const userDocRef = doc(db, 'notebooks', currentUser.uid);
+          const snapshot = await getDoc(userDocRef);
+          if (snapshot.exists()) {
+            const remote = snapshot.data();
+            const remoteSections = Array.isArray(remote?.sections) ? remote.sections : [];
+            const remoteUpdatedAt = Number(remote?.updatedAt || 0);
+
+            if (remoteUpdatedAt > localUpdatedAt) {
+              console.log('[NOTEBOOK] Using newer Firestore data');
+              setSections(remoteSections);
+              // Write back to localStorage for offline
+              try {
+                localStorage.setItem(getNotebookKey(currentUser.uid), JSON.stringify(remoteSections));
+                localStorage.setItem(`${getNotebookKey(currentUser.uid)}-updatedAt`, String(remoteUpdatedAt));
+              } catch (e) {
+                console.warn('[NOTEBOOK] Failed to write Firestore data to localStorage', e);
+              }
+            } else {
+              console.log('[NOTEBOOK] Local data is newer or equal; keeping local');
+            }
+          } else {
+            console.log('[NOTEBOOK] No Firestore notebook yet for user');
+          }
+        } catch (err) {
+          console.error('[NOTEBOOK] Error loading from Firestore:', err);
+        }
+      })();
     }
   }, [currentUser?.uid]);
 
@@ -279,25 +324,17 @@ export default function NotebookPage() {
   
   const handleMouseUp = (e) => {
     const selection = window.getSelection();
-    
+
     if (selection.rangeCount > 0 && selection.toString().trim()) {
-      // Get the selection range
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      
-      // Get textarea position to calculate relative positioning
+      // Use mouse coordinates relative to the textarea to position the button.
       const textareaRect = editorRef.current.getBoundingClientRect();
-      
-      // Position button relative to textarea (absolute positioning)
-      const buttonX = rect.right - textareaRect.left;
-      const buttonY = rect.bottom - textareaRect.top;
-      
+      const buttonX = e.clientX - textareaRect.left;
+      const buttonY = e.clientY - textareaRect.top;
+
       // Get text position for upload
       const textStart = editorRef.current.selectionStart;
       const textEnd = editorRef.current.selectionEnd;
-      
-      console.log('Selection position:', { buttonX, buttonY, rect, textareaRect });
-      
+
       setSelectionPosition({
         x: buttonX,
         y: buttonY,
@@ -305,7 +342,7 @@ export default function NotebookPage() {
         textStart,
         textEnd
       });
-      
+
       setMousePosition({ x: buttonX, y: buttonY });
     } else {
       setSelectionPosition(null);
@@ -555,7 +592,7 @@ export default function NotebookPage() {
                     return (
                       <div
                         key={stickyImage.id}
-                        className="group relative transition-all duration-300"
+                        className="transition-all duration-300"
                         data-sticky-id={stickyImage.id}
                       >
                         <button
@@ -563,7 +600,7 @@ export default function NotebookPage() {
                             setSelectedImage(stickyImage.imageUrl);
                             setShowImageModal(true);
                           }}
-                          className={`w-full aspect-square rounded-lg shadow-md hover:shadow-xl transition-all duration-500 relative overflow-hidden group ${
+                          className={`group w-full aspect-square rounded-lg shadow-md hover:shadow-xl transition-all duration-500 relative overflow-hidden ${
                             isHighlighted 
                               ? 'scale-[2] shadow-2xl z-20' 
                               : 'hover:scale-110 hover:z-10'
@@ -615,13 +652,15 @@ export default function NotebookPage() {
                           <div className="absolute bottom-0 left-0 right-0 text-white text-xs p-1 truncate backdrop-blur-sm bg-black/60 group-hover:bg-black/70 transition-all duration-300">
                             {stickyImage.selectedText ? stickyImage.selectedText.substring(0, 15) + '...' : 'Image'}
                           </div>
-                        </button>
-                        <button
-                          onClick={() => deleteStickyImage(selectedSection, selectedPage, stickyImage.id)}
-                          className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Delete sticky image"
-                        >
-                          <XMarkIcon className="w-3 h-3 text-white" />
+
+                          {/* Delete Button inside the image button to keep positioning consistent */}
+                          <span
+                            onClick={(e) => { e.stopPropagation(); deleteStickyImage(selectedSection, selectedPage, stickyImage.id); }}
+                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-30"
+                            title="Delete sticky image"
+                          >
+                            <XMarkIcon className="w-3 h-3 text-white" />
+                          </span>
                         </button>
                       </div>
                     );

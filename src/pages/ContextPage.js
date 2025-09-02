@@ -12,7 +12,7 @@ import {
 } from '@heroicons/react/24/solid';
 import { DocumentTextIcon as DocumentTextOutline } from '@heroicons/react/24/outline';
 import { db } from '../firebase';
-import { collection, getDocs, query, orderBy, writeBatch, doc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, writeBatch, doc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 
 const getClearTimestampKey = (userId, accountId) => `contextClearTimestamp_${userId}_${accountId}`;
@@ -160,6 +160,24 @@ const ContextPage = () => {
     const timestampKey = getClearTimestampKey(currentUser.uid, 'all');
     const savedTimestamp = sessionStorage.getItem(timestampKey);
     setClearTimestamp(savedTimestamp ? parseInt(savedTimestamp) : null);
+
+    // Load persistent clear timestamp from Firestore (Context-only setting)
+    (async () => {
+      try {
+        const ctxRef = doc(db, 'users', currentUser.uid, 'preferences', 'context');
+        const snap = await getDoc(ctxRef);
+        if (snap.exists()) {
+          const ts = snap.data()?.clearTimestamp;
+          if (typeof ts === 'number' && !Number.isNaN(ts)) {
+            setClearTimestamp(ts);
+            // Mirror to session for fast subsequent loads in session
+            sessionStorage.setItem(timestampKey, String(ts));
+          }
+        }
+      } catch (e) {
+        console.warn('ContextPage: failed to load clear timestamp from Firestore', e);
+      }
+    })();
     
     // Always fetch entries from database
     const fetchEntries = async () => {
@@ -375,13 +393,20 @@ const ContextPage = () => {
     }
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
     if (!currentUser) return;
     const currentTime = Date.now();
     setClearTimestamp(currentTime);
     const timestampKey = getClearTimestampKey(currentUser.uid, 'all');
     sessionStorage.setItem(timestampKey, currentTime.toString());
-    console.log('ContextPage cleared for all accounts at timestamp:', currentTime);
+    console.log('ContextPage cleared (context-only) at timestamp:', currentTime);
+    // Persist to Firestore so it sticks across sessions and devices, without deleting entries
+    try {
+      const ctxRef = doc(db, 'users', currentUser.uid, 'preferences', 'context');
+      await setDoc(ctxRef, { clearTimestamp: currentTime }, { merge: true });
+    } catch (e) {
+      console.error('ContextPage: failed to persist clear timestamp', e);
+    }
   };
 
   const llmPrompt = `You are a trade stat tracker. Every time I paste a trade, extract and log the values below. Track win rates, average P&L, and patterns for each.
@@ -617,24 +642,11 @@ track and show stats. you can share opinions or analysis but keep in minimal`;
             </button>
             
             <button 
-              onClick={handleClear} 
+              onClick={handleClear}
               className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors duration-200"
             >
               <TrashIcon className="w-5 h-5" />
               Clear
-            </button>
-
-            <button 
-              onClick={handleDeleteShown}
-              disabled={!sortedEntries || sortedEntries.length === 0}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors duration-200 ${
-                !sortedEntries || sortedEntries.length === 0 
-                  ? 'bg-gray-500 text-gray-300 cursor-not-allowed' 
-                  : 'bg-red-700 hover:bg-red-600 text-white'
-              }`}
-            >
-              <TrashIcon className="w-5 h-5" />
-              Delete Shown
             </button>
           </div>
 
