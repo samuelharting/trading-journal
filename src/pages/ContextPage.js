@@ -12,10 +12,33 @@ import {
 } from '@heroicons/react/24/solid';
 import { DocumentTextIcon as DocumentTextOutline } from '@heroicons/react/24/outline';
 import { db } from '../firebase';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, writeBatch, doc, deleteDoc } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 
 const getClearTimestampKey = (userId, accountId) => `contextClearTimestamp_${userId}_${accountId}`;
+
+// Normalize an entry's created time to milliseconds since epoch for reliable sorting
+function getCreatedTimeMs(entry) {
+  if (!entry) return 0;
+  // Prefer the created field if present
+  if (entry.created && typeof entry.created === 'string') {
+    const createdStr = entry.created;
+    // Handle format like: "2025-08-05T18:36:30.799Z-fj9ugj"
+    const lastDashIndex = createdStr.lastIndexOf('-');
+    const maybeIso = lastDashIndex > 10 ? createdStr.substring(0, lastDashIndex) : createdStr;
+    const t = new Date(maybeIso).getTime();
+    if (!Number.isNaN(t)) return t;
+  }
+  // Fallback to year/month/day fields if available
+  if (entry.year && entry.month && entry.day) {
+    const yearNum = parseInt(entry.year, 10);
+    const monthNum = parseInt(entry.month, 10) - 1; // 0-indexed
+    const dayNum = parseInt(entry.day, 10);
+    const t = new Date(yearNum, monthNum, dayNum).getTime();
+    if (!Number.isNaN(t)) return t;
+  }
+  return 0;
+}
 
 function entryToText(entry) {
   // Helpers to normalize display values
@@ -72,8 +95,8 @@ function entryToText(entry) {
     }
   }
   
-  // Fallback to parsing created timestamp
-  if (dayOfWeek === '(blank)' && entry.created) {
+  // Fallback to parsing created timestamp if dayOfWeek not resolved above
+  if (dayOfWeek === 'N/A' && entry.created) {
     try {
       // Handle the timestamp format that includes random suffix
       const lastDashIndex = entry.created.lastIndexOf('-');
@@ -157,16 +180,17 @@ const ContextPage = () => {
         const q = query(entriesCol, orderBy('created', 'desc'));
         // Force server fetch
         const snap = await getDocs(q, { source: 'server' });
-        const accountEntries = snap.docs.map(doc => ({ 
-          ...doc.data(), 
+        const accountEntries = snap.docs.map(d => ({ 
+          id: d.id,
+          ...d.data(), 
           accountId: account.id,
           accountName: account.name
         }));
         allEntries.push(...accountEntries);
       }
       
-      // Sort all entries by creation date (newest first)
-      allEntries.sort((a, b) => new Date(b.created) - new Date(a.created));
+      // Sort all entries by creation date (newest first) using normalized timestamp
+      allEntries.sort((a, b) => getCreatedTimeMs(b) - getCreatedTimeMs(a));
       
       setEntries(allEntries);
       setLoading(false);
@@ -198,7 +222,7 @@ const ContextPage = () => {
       console.log('ContextPage filtered by timestamp:', clearTimestamp, 'showing', filteredEntries.length, 'of', entries.length);
     }
     
-    const arr = filteredEntries.sort((a, b) => new Date(b.created) - new Date(a.created));
+    const arr = filteredEntries.sort((a, b) => getCreatedTimeMs(b) - getCreatedTimeMs(a));
     console.log('ContextPage sortedEntries:', arr.map(e => e.created));
     return arr;
   }, [entries, clearTimestamp]);
@@ -452,22 +476,54 @@ track and show stats. you can share opinions or analysis but keep in minimal`;
       const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', account.id, 'entries');
       const q = query(entriesCol, orderBy('created', 'desc'));
       const snap = await getDocs(q, { source: 'server' });
-      const accountEntries = snap.docs.map(doc => ({ 
-        ...doc.data(), 
+      const accountEntries = snap.docs.map(d => ({ 
+        id: d.id,
+        ...d.data(), 
         accountId: account.id,
         accountName: account.name
       }));
       allEntries.push(...accountEntries);
     }
     
-    // Sort all entries by creation date (newest first)
-    allEntries.sort((a, b) => new Date(b.created) - new Date(a.created));
+    // Sort all entries by creation date (newest first) using normalized timestamp
+    allEntries.sort((a, b) => getCreatedTimeMs(b) - getCreatedTimeMs(a));
     
     setEntries(allEntries);
     setLoading(false);
     console.log('ContextPage refreshed, fetched', allEntries.length, 'entries from all accounts');
   };
 
+
+  // Permanently delete currently shown entries from Firestore
+  const handleDeleteShown = async () => {
+    try {
+      if (!currentUser) return;
+      if (!sortedEntries || sortedEntries.length === 0) return;
+
+      const confirmed = window.confirm(`Delete ${sortedEntries.length} shown entr${sortedEntries.length === 1 ? 'y' : 'ies'} permanently? This cannot be undone.`);
+      if (!confirmed) return;
+
+      const batch = writeBatch(db);
+      let deleteCount = 0;
+      sortedEntries.forEach(entry => {
+        if (!entry.id || !entry.accountId) return;
+        const ref = doc(db, 'users', currentUser.uid, 'accounts', entry.accountId, 'entries', entry.id);
+        batch.delete(ref);
+        deleteCount += 1;
+      });
+
+      if (deleteCount === 0) return;
+
+      await batch.commit();
+
+      // Remove deleted entries from local state immediately
+      const deletedIds = new Set(sortedEntries.map(e => e.id).filter(Boolean));
+      setEntries(prev => prev.filter(e => !deletedIds.has(e.id)));
+      console.log('Deleted entries:', deleteCount);
+    } catch (error) {
+      console.error('Error deleting shown entries:', error);
+    }
+  };
 
 
   return (
@@ -566,6 +622,19 @@ track and show stats. you can share opinions or analysis but keep in minimal`;
             >
               <TrashIcon className="w-5 h-5" />
               Clear
+            </button>
+
+            <button 
+              onClick={handleDeleteShown}
+              disabled={!sortedEntries || sortedEntries.length === 0}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors duration-200 ${
+                !sortedEntries || sortedEntries.length === 0 
+                  ? 'bg-gray-500 text-gray-300 cursor-not-allowed' 
+                  : 'bg-red-700 hover:bg-red-600 text-white'
+              }`}
+            >
+              <TrashIcon className="w-5 h-5" />
+              Delete Shown
             </button>
           </div>
 
