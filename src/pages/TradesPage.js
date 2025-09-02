@@ -6,7 +6,7 @@ import { StarIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, XMarkIcon, Infor
 import { UserContext } from "../App";
 import { useHeader } from "../components/Layout";
 import { db } from '../firebase';
-import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 
 const TradesPage = () => {
@@ -29,6 +29,39 @@ const TradesPage = () => {
   const [showAllTrades, setShowAllTrades] = useState(false);
   
   const navigate = useNavigate();
+
+  // Function to delete a trade from all accounts
+  const deleteTrade = async (entry) => {
+    if (!currentUser || !entry) return;
+    
+    try {
+      // Get all accounts for the current user
+      const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
+      const accountsSnap = await getDocs(accountsCol);
+      const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Delete the entry from all accounts where it exists
+      const deletePromises = accounts.map(async (account) => {
+        const entryDoc = doc(db, 'users', currentUser.uid, 'accounts', account.id, 'entries', entry.id);
+        try {
+          await deleteDoc(entryDoc);
+          console.log(`✅ Deleted entry from account: ${account.name}`);
+        } catch (error) {
+          // Entry might not exist in this account, that's okay
+          console.log(`ℹ️ Entry not found in account: ${account.name}`);
+        }
+      });
+      
+      await Promise.all(deletePromises);
+      console.log('✅ Trade deleted from all accounts successfully');
+      
+      // Refresh the data to update the UI
+      window.location.reload();
+    } catch (error) {
+      console.error('❌ Error deleting trade:', error);
+      alert('Failed to delete trade. Please try again.');
+    }
+  };
 
   useEffect(() => {
     if (!currentUser || !selectedAccount) return;
@@ -607,6 +640,22 @@ const TradesPage = () => {
                   onClick={() => openEntryDetails(group.entry)}
                 >
                   <div className="text-4xl font-bold text-blue-400">$</div>
+                  
+                  {/* Delete Button for deposits */}
+                  <button
+                    className="absolute top-4 left-4 z-10"
+                    onClick={e => { e.stopPropagation(); deleteTrade(group.entry); }}
+                    aria-label="Delete deposit"
+                    style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '9999px', padding: 4 }}
+                  >
+                    <motion.span
+                      initial={{ scale: 0.8 }}
+                      whileHover={{ scale: 1.1 }}
+                      transition={{ type: 'spring', stiffness: 400 }}
+                    >
+                      <XMarkIcon className="w-6 h-6 sm:w-8 sm:h-8 text-red-400 hover:text-red-300" />
+                    </motion.span>
+                  </button>
                 </div>
               ) : group.isPayout ? (
                 // Payout placeholder
@@ -615,6 +664,22 @@ const TradesPage = () => {
                   onClick={() => openEntryDetails(group.entry)}
                 >
                   <div className="text-4xl font-bold text-red-400">$</div>
+                  
+                  {/* Delete Button for payouts */}
+                  <button
+                    className="absolute top-4 left-4 z-10"
+                    onClick={e => { e.stopPropagation(); deleteTrade(group.entry); }}
+                    aria-label="Delete payout"
+                    style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '9999px', padding: 4 }}
+                  >
+                    <motion.span
+                      initial={{ scale: 0.8 }}
+                      whileHover={{ scale: 1.1 }}
+                      transition={{ type: 'spring', stiffness: 400 }}
+                    >
+                      <XMarkIcon className="w-6 h-6 sm:w-8 sm:h-8 text-red-400 hover:text-red-300" />
+                    </motion.span>
+                  </button>
                 </div>
               ) : group.totalImages > 0 ? (
                 // Regular screenshot entry
@@ -632,6 +697,22 @@ const TradesPage = () => {
                       transition={{ type: 'spring', stiffness: 400 }}
                     >
                       <StarIcon className={`w-6 h-6 sm:w-8 sm:h-8 ${favorites[group.firstImage?.src] ? 'text-yellow-400' : 'text-gray-400'}`} />
+                    </motion.span>
+                  </button>
+
+                  {/* Delete Button */}
+                  <button
+                    className="absolute top-4 left-4 z-10"
+                    onClick={e => { e.stopPropagation(); deleteTrade(group.entry); }}
+                    aria-label="Delete trade"
+                    style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '9999px', padding: 4 }}
+                  >
+                    <motion.span
+                      initial={{ scale: 0.8 }}
+                      whileHover={{ scale: 1.1 }}
+                      transition={{ type: 'spring', stiffness: 400 }}
+                    >
+                      <XMarkIcon className="w-6 h-6 sm:w-8 sm:h-8 text-red-400 hover:text-red-300" />
                     </motion.span>
                   </button>
 
@@ -735,6 +816,22 @@ const TradesPage = () => {
                   <div className="text-4xl font-bold text-neutral-400">
                     {group.isTapeReading ? '📊' : '📈'}
                   </div>
+                  
+                  {/* Delete Button for placeholder trades */}
+                  <button
+                    className="absolute top-4 left-4 z-10"
+                    onClick={e => { e.stopPropagation(); deleteTrade(group.entry); }}
+                    aria-label="Delete trade"
+                    style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '9999px', padding: 4 }}
+                  >
+                    <motion.span
+                      initial={{ scale: 0.8 }}
+                      whileHover={{ scale: 1.1 }}
+                      transition={{ type: 'spring', stiffness: 400 }}
+                    >
+                      <XMarkIcon className="w-6 h-6 sm:w-8 sm:h-8 text-red-400 hover:text-red-300" />
+                    </motion.span>
+                  </button>
                 </div>
               )}
 
@@ -966,15 +1063,28 @@ const TradesPage = () => {
                 )}
               </div>
               
-              {/* Go to Day button */}
-              {tradeEntry.month && tradeEntry.day && (
+              {/* Action Buttons */}
+              <div className="flex gap-3 mt-6">
+                {tradeEntry.month && tradeEntry.day && (
+                  <button
+                    onClick={goToDay}
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white py-3 rounded-lg font-semibold transition-all shadow-lg"
+                  >
+                    Go to Day
+                  </button>
+                )}
+                
                 <button
-                  onClick={goToDay}
-                  className="w-full mt-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white py-3 rounded-lg font-semibold transition-all shadow-lg"
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to delete this entry? This action cannot be undone and will delete it from all accounts.')) {
+                      deleteTrade(tradeEntry);
+                    }
+                  }}
+                  className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-all shadow-lg"
                 >
-                  Go to Day
+                  Delete
                 </button>
-              )}
+              </div>
             </motion.div>
           </motion.div>
         )}
