@@ -8,6 +8,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 import GlitchTitle from '../components/GlitchTitle';
 import { CalendarIcon } from '@heroicons/react/24/outline';
+import { getTradingPerformance } from '../statsUtils';
 
 const months = [
   "January", "February", "March", "April", "May", "June",
@@ -17,11 +18,11 @@ const months = [
 const HomePage = () => {
   const { currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
   const navigate = useNavigate();
-  // Year dropdown logic: always start at 2025, go up to 2035
+  // Year dropdown logic: dynamic range based on current year
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const yearOptions = [];
-  for (let y = 2025; y <= 2035; y++) yearOptions.push(y);
+  for (let y = currentYear - 3; y <= currentYear + 2; y++) yearOptions.push(y);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,47 +65,48 @@ const HomePage = () => {
   }, [currentUser, entries, loading]);
 
   // Aggregate P&L, trade counts, and calculate percentages by month
+  // Now uses the same calculation method as CalendarPage and SummaryPage via getTradingPerformance
   const monthData = useMemo(() => {
     const data = Array(12).fill(null).map(() => ({ pnl: 0, count: 0, percentage: 0 }));
     
-    // Calculate starting capital for percentage calculations
-    let startingCapital = 0;
+    // Process entries for the selected year and calculate monthly data
     entries.forEach(entry => {
-      if (entry.isDeposit) {
-        startingCapital += Number(entry.pnl) || 0;
-      } else if (entry.isPayout) {
-        startingCapital += Number(entry.pnl) || 0; // Already negative
-      }
-    });
-    
-            entries.forEach(entry => {
       if (String(entry.year) === String(year)) {
         const idx = parseInt(entry.month, 10) - 1;
         if (idx >= 0 && idx < 12) {
           // Only count actual trades (not deposits, payouts, tape reading, or reset-excluded)
           const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && !entry.isResetExcluded && entry.pnl !== undefined && entry.pnl !== null && entry.pnl !== "";
           if (isActualTrade) {
-            data[idx].pnl += Number(entry.pnl) || 0;
+            // Use precision-safe addition to avoid floating point errors
+            const currentPnl = data[idx].pnl;
+            const newPnl = Number(entry.pnl) || 0;
+            data[idx].pnl = Math.round((currentPnl + newPnl) * 100) / 100;
             data[idx].count += 1;
           }
         }
       }
     });
     
-    // Calculate percentages for each month
+    // Calculate percentages for each month using the same logic as other pages
     data.forEach((month, idx) => {
-      if (month.count > 0 && startingCapital > 0) {
-        month.percentage = (month.pnl / startingCapital) * 100;
+      if (month.count > 0) {
+        // Use getTradingPerformance to get the percentage for this month
+        const monthPerformance = getTradingPerformance(entries, year, idx + 1);
+        if (monthPerformance && monthPerformance.startingCapital > 0) {
+          month.percentage = monthPerformance.percentage;
+        }
       }
     });
     
     // Debug logging for August
     if (data[7]) { // August is index 7 (0-based)
+      const augustPerformance = getTradingPerformance(entries, year, 8);
       console.log('📅 HomePage August Debug:', {
         pnl: data[7].pnl,
         count: data[7].count,
         percentage: data[7].percentage,
-        startingCapital: startingCapital
+        startingCapital: augustPerformance?.startingCapital || 0,
+        calculation: augustPerformance ? `${data[7].pnl} / ${augustPerformance.startingCapital} * 100 = ${data[7].percentage}%` : 'No performance data'
       });
     }
     

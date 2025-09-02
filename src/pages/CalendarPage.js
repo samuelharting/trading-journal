@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { UserContext } from "../App";
 import { getTradingPerformance } from '../statsUtils';
+import { CalendarIcon } from '@heroicons/react/24/outline';
 
 const months = [
   "January", "February", "March", "April", "May", "June",
@@ -9,10 +10,14 @@ const months = [
 ];
 
 
-const HomePage = () => {
+const CalendarPage = () => {
   const { currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
   const navigate = useNavigate();
-  const year = new Date().getFullYear();
+  // Year dropdown logic: dynamic range based on current year (same as HomePage)
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const yearOptions = [];
+  for (let y = currentYear - 3; y <= currentYear + 2; y++) yearOptions.push(y);
   const [entries, setEntries] = useState([]);
   const [monthlyGoalProgress, setMonthlyGoalProgress] = useState({});
 
@@ -29,6 +34,8 @@ const HomePage = () => {
         setEntries(data);
         
         // Calculate monthly goal progress for each month using statsUtils
+        // Note: Percentages are calculated as (monthly P&L / total deposits) * 100
+        // This matches the calculation method used in HomePage and SummaryPage
         const progress = {};
         months.forEach((_, monthIdx) => {
           const monthNum = monthIdx + 1;
@@ -64,7 +71,8 @@ const HomePage = () => {
                 hasData: monthPerformance.hasTrades,
                 pnl: monthPerformance.pnl,
                 percentage: monthPerformance.percentage,
-                tradeCount: tradeCount
+                tradeCount: tradeCount,
+                calculation: `${monthPerformance.pnl} / ${monthPerformance.startingCapital} * 100 = ${monthPerformance.percentage}%`
               });
             }
           } else {
@@ -89,6 +97,23 @@ const HomePage = () => {
 
   return (
     <div className="flex flex-col items-center">
+      {/* Year dropdown - same as HomePage */}
+      <div className="flex items-center gap-3 mb-6 mt-2">
+        <CalendarIcon className="w-7 h-7 text-blue-400" />
+        <select
+          className="ml-2 bg-neutral-900 text-[#e5e5e5] border border-neutral-700 rounded px-2 py-1 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          value={year}
+          onChange={e => setYear(Number(e.target.value))}
+          style={{ width: 80 }}
+        >
+          {yearOptions.map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+        <span className="text-3xl font-bold text-[#e5e5e5]">Calendar</span>
+        <div className="flex-1 border-b border-white/10 ml-4" />
+      </div>
+      
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 w-full max-w-2xl mt-4">
         {months.map((month, idx) => {
           const monthNum = idx + 1;
@@ -190,4 +215,4 @@ const HomePage = () => {
   );
 };
 
-export default HomePage; 
+export default CalendarPage; 

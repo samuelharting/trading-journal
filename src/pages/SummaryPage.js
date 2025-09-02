@@ -24,10 +24,17 @@ function sumPrecise(arr) {
   return arr.reduce((sum, v) => sum + Math.round(Number(v) * 100), 0) / 100;
 }
 
-function getStats(entries) {
+function getStats(entries, selectedYear = 'all') {
   if (!entries.length) return null;
+  
+  // Filter entries by year if a specific year is selected
+  let filteredEntries = entries;
+  if (selectedYear !== 'all') {
+    filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
+  }
+  
   // Only include entries that are actual trades (not deposits, payouts, tape reading, or reset-excluded)
-  const tradeEntries = entries.filter(e => 
+  const tradeEntries = filteredEntries.filter(e => 
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading && 
@@ -92,7 +99,13 @@ function getStats(entries) {
   };
 }
 
-function getEquityCurve(entries) {
+function getEquityCurve(entries, selectedYear = 'all') {
+  // Filter entries by year if a specific year is selected
+  let filteredEntries = entries;
+  if (selectedYear !== 'all') {
+    filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
+  }
+  
   // Helper function to get entry date using year/month/day fields (consistent with other functions)
   const getEntryDate = (entry) => {
     if (entry.year && entry.month && entry.day) {
@@ -222,7 +235,13 @@ function getEquityCurve(entries) {
   return { curve, points };
 }
 
-function getStreaks(entries) {
+function getStreaks(entries, selectedYear = 'all') {
+  // Filter entries by year if a specific year is selected
+  let filteredEntries = entries;
+  if (selectedYear !== 'all') {
+    filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
+  }
+  
   // Helper function to get entry date using year/month/day fields (consistent with other functions)
   const getEntryDate = (entry) => {
     if (entry.year && entry.month && entry.day) {
@@ -270,10 +289,16 @@ function getStreaks(entries) {
   return { greenStreak, lossStreak, maxGreen, maxLoss };
 }
 
-function getDailyPnl(entries) {
+function getDailyPnl(entries, selectedYear = 'all') {
+  // Filter entries by year if a specific year is selected
+  let filteredEntries = entries;
+  if (selectedYear !== 'all') {
+    filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
+  }
+  
   const byDay = {};
   // Only count actual trades (not deposits, payouts, tape reading, or reset-excluded)
-  entries.filter(e => 
+  filteredEntries.filter(e => 
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading &&
@@ -465,11 +490,17 @@ function getWeeklyPnlsForMonth(entries, year, month) {
   return weeks;
 }
 
-function getPercentageChanges(entries, currentBalance) {
+function getPercentageChanges(entries, currentBalance, selectedYear = 'all') {
   if (!entries.length) return null;
   
+  // Filter entries by year if a specific year is selected
+  let filteredEntries = entries;
+  if (selectedYear !== 'all') {
+    filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
+  }
+  
   // Sort all entries chronologically to calculate proper account balance progression
-  const sortedEntries = [...entries].sort((a, b) => {
+  const sortedEntries = [...filteredEntries].sort((a, b) => {
     const aTime = a.created ? new Date(a.created.split('-')[0]).getTime() : 0;
     const bTime = b.created ? new Date(b.created.split('-')[0]).getTime() : 0;
     return aTime - bTime;
@@ -605,7 +636,15 @@ const SummaryPage = () => {
   const [entries, setEntries] = useState([]);
   const [dailyPnl, setDailyPnl] = useState({});
   const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState('all'); // 'all' or specific year
   const navigate = useNavigate();
+  
+  // Year dropdown options: All Time + dynamic range based on current year
+  const currentYear = new Date().getFullYear();
+  const yearOptions = [
+    { value: 'all', label: 'All Time' },
+    ...Array.from({ length: 8 }, (_, i) => currentYear - 3 + i).map(y => ({ value: y.toString(), label: y.toString() }))
+  ];
 
   useEffect(() => {
     const fetchEntries = async () => {
@@ -626,18 +665,19 @@ const SummaryPage = () => {
           trades: data.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading).length,
           tapeReadings: data.filter(e => e.isTapeReading).length
         });
+        console.log('📊 SummaryPage: Selected year:', selectedYear, 'Filtered entries for year:', selectedYear === 'all' ? 'All years' : selectedYear);
         
         setEntries(data);
-        const statsResult = getStats(data);
-        const curveResult = getEquityCurve(data);
+        const statsResult = getStats(data, selectedYear);
+        const curveResult = getEquityCurve(data, selectedYear);
         
         console.log('📈 SummaryPage: Stats result:', statsResult);
         console.log('📈 SummaryPage: Curve result balance:', curveResult?.points?.length ? curveResult.points[curveResult.points.length - 1]?.y : 0);
         
         setStats(statsResult);
         setCurveData(curveResult);
-        setStreaks(getStreaks(data));
-        setDailyPnl(getDailyPnl(data));
+        setStreaks(getStreaks(data, selectedYear));
+        setDailyPnl(getDailyPnl(data, selectedYear));
       } catch (error) {
         console.error('❌ SummaryPage: Error fetching entries:', error);
       }
@@ -645,7 +685,7 @@ const SummaryPage = () => {
     };
     
     fetchEntries();
-  }, [currentUser, selectedAccount, dataRefreshTrigger]);
+  }, [currentUser, selectedAccount, dataRefreshTrigger, selectedYear]);
 
   // Note: Removed visibility/focus refresh since we now have triggerDataRefresh mechanism
 
@@ -664,9 +704,15 @@ const SummaryPage = () => {
 
   // Compute current account balance
   let currentBalance = "0.00";
-  console.log('💰 SummaryPage: Computing balance for', entries.length, 'entries');
+  console.log('💰 SummaryPage: Computing balance for', entries.length, 'entries, year filter:', selectedYear);
   
   if (entries.length > 0) {
+    // Filter entries by year if a specific year is selected
+    let balanceEntries = entries;
+    if (selectedYear !== 'all') {
+      balanceEntries = entries.filter(e => String(e.year) === String(selectedYear));
+      console.log('💰 SummaryPage: Filtered to', balanceEntries.length, 'entries for year', selectedYear);
+    }
     // Helper function to get entry date using year/month/day fields (consistent with other functions)
     const getEntryDate = (entry) => {
       if (entry.year && entry.month && entry.day) {
@@ -685,7 +731,7 @@ const SummaryPage = () => {
     };
 
     // Sort entries chronologically - using created timestamp as primary sort
-    const sorted = [...entries].sort((a, b) => {
+    const sorted = [...balanceEntries].sort((a, b) => {
       const getTimestamp = (entry) => {
         if (entry.created) {
           const timestamp = entry.created.split('-')[0]; // Remove random suffix
@@ -738,25 +784,20 @@ const SummaryPage = () => {
   }
 
   // Calculate percentage changes (trading only, excluding deposits/payouts)
-  const percentageChanges = getPercentageChanges(entries, currentBalance);
+  const percentageChanges = getPercentageChanges(entries, currentBalance, selectedYear);
   
   // Get current month's trading performance for the 20% goal
   const now = new Date();
-  const currentMonthPerformance = getTradingPerformance(entries, now.getFullYear(), now.getMonth() + 1);
+  let currentMonthPerformance = null;
   
-  // Final summary
-  console.log('🎯 SummaryPage: CALCULATION COMPLETE');
-  console.log('🎯 Balance Display:', currentBalance);
-  console.log('🎯 Equity Curve Points:', curveData?.points?.length || 0);
-  console.log('==========================================');
-
-  // Find the most recent day, week, and month
-  const mostRecentDay = dailyRows.length > 0 ? dailyRows[0] : null;
-  const mostRecentWeek = weeklyRows.length > 0 ? weeklyRows[0] : null;
-  const mostRecentMonth = monthlyRows.length > 0 ? monthlyRows[0] : null;
-
+  // Only show current month performance if we're viewing all time or the current year
+  if (selectedYear === 'all' || String(now.getFullYear()) === String(selectedYear)) {
+    currentMonthPerformance = getTradingPerformance(entries, now.getFullYear(), now.getMonth() + 1);
+  }
+  
   // Only consider actual trades (not deposits, payouts, tape reading, or reset-excluded) for best/worst/recent
-  const tradeEntries = entries.filter(e => 
+  // Also respect year filter if selected
+  let tradeEntries = entries.filter(e => 
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading && 
@@ -764,6 +805,25 @@ const SummaryPage = () => {
     typeof e.pnl === 'number' && 
     !isNaN(e.pnl)
   );
+  
+  // Apply year filter if specific year is selected
+  if (selectedYear !== 'all') {
+    tradeEntries = tradeEntries.filter(e => String(e.year) === String(selectedYear));
+    console.log('📊 SummaryPage: Filtered trade entries to', tradeEntries.length, 'trades for year', selectedYear);
+  }
+
+  // Final summary
+  console.log('🎯 SummaryPage: CALCULATION COMPLETE');
+  console.log('🎯 Year Filter:', selectedYear);
+  console.log('🎯 Balance Display:', currentBalance);
+  console.log('🎯 Equity Curve Points:', curveData?.points?.length || 0);
+  console.log('🎯 Trade Entries Count:', tradeEntries.length);
+  console.log('==========================================');
+
+  // Find the most recent day, week, and month
+  const mostRecentDay = dailyRows.length > 0 ? dailyRows[0] : null;
+  const mostRecentWeek = weeklyRows.length > 0 ? weeklyRows[0] : null;
+  const mostRecentMonth = monthlyRows.length > 0 ? monthlyRows[0] : null;
   // Helper function to get entry date using year/month/day fields (consistent with other functions)
   const getEntryDate = (entry) => {
     if (entry.year && entry.month && entry.day) {
@@ -844,11 +904,13 @@ const SummaryPage = () => {
   }));
   const weeklyTrend = stats && stats.byWeek ? Object.entries(stats.byWeek).map(([week, value]) => ({ week, value })) : [];
 
-  // Get current year/month  
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-  // Get weekly PnLs for current month
-  const weeklyPnls = getWeeklyPnlsForMonth(entries, currentYear, currentMonth);
+  // Get current month
+  const currentMonth = new Date().getMonth() + 1;
+  // Get weekly PnLs for current month - respect year filter
+  let weeklyPnls = [];
+  if (selectedYear === 'all' || String(currentYear) === String(selectedYear)) {
+    weeklyPnls = getWeeklyPnlsForMonth(entries, currentYear, currentMonth);
+  }
   // Get monthly PnL for current month
   const monthlyPnl = Math.round(weeklyPnls.reduce((sum, w) => sum + w.pnl, 0) * 100) / 100;
 
@@ -960,6 +1022,32 @@ const SummaryPage = () => {
         <button onClick={handleReset} className="bg-red-700 hover:bg-red-600 text-white px-4 py-2 rounded text-sm font-bold shadow ml-4">Reset Account</button>
       </div>
       
+      {/* Year Filter Dropdown - Subtle and positioned below reset button */}
+      <div className="flex justify-end mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-neutral-400">Time Period:</span>
+          <select
+            className="bg-neutral-900 text-[#e5e5e5] border border-neutral-700 rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+            value={selectedYear}
+            onChange={e => setSelectedYear(e.target.value)}
+          >
+            {yearOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          {selectedYear !== 'all' && (
+            <span className="text-xs text-blue-400 bg-blue-900/20 px-2 py-1 rounded">
+              {selectedYear} Only
+            </span>
+          )}
+          {selectedYear !== 'all' && (
+            <span className="text-xs text-neutral-500">
+              ({tradeEntries.length} trades)
+            </span>
+          )}
+        </div>
+      </div>
+      
       {loading ? (
         <Spinner />
       ) : isNewAccount ? (
@@ -1017,6 +1105,22 @@ const SummaryPage = () => {
         </div>
       ) : !stats ? (
         <div className="text-neutral-500">No data yet.</div>
+      ) : selectedYear !== 'all' && tradeEntries.length === 0 ? (
+        <div className="w-full flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="max-w-2xl text-center space-y-6">
+            <div className="w-20 h-20 mx-auto bg-neutral-800 rounded-full flex items-center justify-center">
+              <CalendarIcon className="w-10 h-10 text-neutral-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-[#e5e5e5]">No Data for {selectedYear}</h2>
+            <p className="text-neutral-400">There are no trades recorded for the year {selectedYear}.</p>
+            <button
+              onClick={() => setSelectedYear('all')}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+            >
+              View All Time
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="w-full flex flex-col gap-6">
           {/* --- TOP PRIORITY SECTION: Day/Week/Month P&L + Account Balance --- */}

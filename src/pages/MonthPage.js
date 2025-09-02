@@ -115,12 +115,10 @@ const MonthPage = () => {
 
   const weeklyPnls = useMemo(() => getWeeklyPnls(entries, year, month, calendarGrid), [entries, year, month, calendarGrid]);
 
-  // Year dropdown: always start at 2025, go up to max(current year, year in URL)
-  const baseYear = 2025;
-  const urlYear = parseInt(year, 10);
-  const maxYear = Math.max(new Date().getFullYear(), urlYear);
+  // Year dropdown: dynamic range based on current year (same as HomePage and CalendarPage)
+  const currentYear = new Date().getFullYear();
   const yearOptions = [];
-  for (let y = baseYear; y <= maxYear; y++) yearOptions.push(y);
+  for (let y = currentYear - 3; y <= currentYear + 2; y++) yearOptions.push(y);
 
   return (
     <div className="w-full min-h-screen bg-black pt-8 px-8">

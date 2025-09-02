@@ -22,11 +22,12 @@ const TradesPage = () => {
   const [showTradeDetails, setShowTradeDetails] = useState(false);
   
   // Filter state
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(currentYear.toString());
   const [selectedMonth, setSelectedMonth] = useState((new Date().getMonth() + 1).toString());
   const [filteredGroups, setFilteredGroups] = useState([]);
   const [showFilter, setShowFilter] = useState(false);
-  const [showAllTrades, setShowAllTrades] = useState(false);
+  const [showAllTrades, setShowAllTrades] = useState(true);
   
   const navigate = useNavigate();
 
@@ -55,8 +56,15 @@ const TradesPage = () => {
       await Promise.all(deletePromises);
       console.log('✅ Trade deleted from all accounts successfully');
       
-      // Refresh the data to update the UI
-      window.location.reload();
+      // Update local state instead of refreshing the page
+      setGroupedImages(prev => prev.filter(group => group.entry.id !== entry.id));
+      setAllImages(prev => prev.filter(item => item.entry.id !== entry.id));
+      setAllEntries(prev => prev.filter(item => item.id !== entry.id));
+      
+      // Close any open modals if the deleted entry was being viewed
+      if (selectedImage && selectedImage.entry && selectedImage.entry.id === entry.id) {
+        closeImageViewer();
+      }
     } catch (error) {
       console.error('❌ Error deleting trade:', error);
       alert('Failed to delete trade. Please try again.');
@@ -493,6 +501,9 @@ const TradesPage = () => {
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
   ];
 
+  const yearOptions = [];
+  for (let y = currentYear - 3; y <= currentYear + 2; y++) yearOptions.push(y);
+
   return (
     <div className="w-full min-h-screen bg-black pt-20 px-4 sm:px-8 relative" style={{ zIndex: 0 }}>
       {/* Filter Button */}
@@ -520,14 +531,15 @@ const TradesPage = () => {
               {/* Year Input */}
               <div className="w-full md:w-1/3">
                 <label className="block text-neutral-400 mb-2 font-medium">Year</label>
-                <input
-                  type="number"
+                <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
                   className="w-full bg-neutral-800 text-white border border-neutral-600 rounded-lg px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  min="2000"
-                  max="2100"
-                />
+                >
+                  {yearOptions.map(year => (
+                    <option key={year} value={year.toString()}>{year}</option>
+                  ))}
+                </select>
               </div>
               
               {/* Month Picker */}
@@ -613,25 +625,26 @@ const TradesPage = () => {
           </div>
         )}
         {filteredGroups.map((group, groupIdx) => (
-          <Tilt
-            key={groupIdx}
-            glareEnable={true}
-            glareMaxOpacity={0.15}
-            glareColor="#fff"
-            glarePosition="all"
-            tiltMaxAngleX={10}
-            tiltMaxAngleY={10}
-            scale={1.03}
-            transitionSpeed={600}
-            className="relative"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              whileHover={{ scale: 1.08 }}
-              transition={{ duration: 0.3, delay: groupIdx * 0.03 }}
-              className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 flex flex-col items-center border border-white/20 shadow-xl cursor-pointer group w-full h-full min-h-[280px]"
+          <AnimatePresence key={group.entry.id}>
+            <Tilt
+              glareEnable={true}
+              glareMaxOpacity={0.15}
+              glareColor="#fff"
+              glarePosition="all"
+              tiltMaxAngleX={10}
+              tiltMaxAngleY={10}
+              scale={1.03}
+              transitionSpeed={600}
+              className="relative"
             >
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.8, y: -20 }}
+                whileHover={{ scale: 1.08 }}
+                transition={{ duration: 0.3, delay: groupIdx * 0.03 }}
+                className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 flex flex-col items-center border border-white/20 shadow-xl cursor-pointer group w-full h-full min-h-[280px]"
+              >
               {/* Deposit/Payout or Trade/TapeReading Content */}
               {group.isDeposit ? (
                 // Deposit placeholder
@@ -643,17 +656,17 @@ const TradesPage = () => {
                   
                   {/* Delete Button for deposits */}
                   <button
-                    className="absolute top-4 left-4 z-10"
+                    className="absolute top-2 left-2 z-10"
                     onClick={e => { e.stopPropagation(); deleteTrade(group.entry); }}
                     aria-label="Delete deposit"
-                    style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '9999px', padding: 4 }}
+                    style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '9999px', padding: 3 }}
                   >
                     <motion.span
                       initial={{ scale: 0.8 }}
                       whileHover={{ scale: 1.1 }}
                       transition={{ type: 'spring', stiffness: 400 }}
                     >
-                      <XMarkIcon className="w-6 h-6 sm:w-8 sm:h-8 text-red-400 hover:text-red-300" />
+                      <XMarkIcon className="w-4 h-4 text-neutral-400 hover:text-neutral-300" />
                     </motion.span>
                   </button>
                 </div>
@@ -667,17 +680,17 @@ const TradesPage = () => {
                   
                   {/* Delete Button for payouts */}
                   <button
-                    className="absolute top-4 left-4 z-10"
+                    className="absolute top-2 left-2 z-10"
                     onClick={e => { e.stopPropagation(); deleteTrade(group.entry); }}
                     aria-label="Delete payout"
-                    style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '9999px', padding: 4 }}
+                    style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '9999px', padding: 3 }}
                   >
                     <motion.span
                       initial={{ scale: 0.8 }}
                       whileHover={{ scale: 1.1 }}
                       transition={{ type: 'spring', stiffness: 400 }}
                     >
-                      <XMarkIcon className="w-6 h-6 sm:w-8 sm:h-8 text-red-400 hover:text-red-300" />
+                      <XMarkIcon className="w-4 h-4 text-neutral-400 hover:text-neutral-300" />
                     </motion.span>
                   </button>
                 </div>
@@ -702,17 +715,17 @@ const TradesPage = () => {
 
                   {/* Delete Button */}
                   <button
-                    className="absolute top-4 left-4 z-10"
+                    className="absolute top-2 left-2 z-10"
                     onClick={e => { e.stopPropagation(); deleteTrade(group.entry); }}
                     aria-label="Delete trade"
-                    style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '9999px', padding: 4 }}
+                    style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '9999px', padding: 3 }}
                   >
                     <motion.span
                       initial={{ scale: 0.8 }}
                       whileHover={{ scale: 1.1 }}
                       transition={{ type: 'spring', stiffness: 400 }}
                     >
-                      <XMarkIcon className="w-6 h-6 sm:w-8 sm:h-8 text-red-400 hover:text-red-300" />
+                      <XMarkIcon className="w-4 h-4 text-neutral-400 hover:text-neutral-300" />
                     </motion.span>
                   </button>
 
@@ -791,7 +804,7 @@ const TradesPage = () => {
                         
                         {/* Image Count Badge */}
                         <motion.div 
-                          className="absolute top-2 left-2 z-20 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full px-3 py-1 text-sm font-bold shadow-lg"
+                          className="absolute top-2 right-2 z-20 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full px-3 py-1 text-sm font-bold shadow-lg"
                           initial={{ scale: 0, opacity: 0 }}
                           animate={{ scale: 1, opacity: 1 }}
                           transition={{ 
@@ -819,17 +832,17 @@ const TradesPage = () => {
                   
                   {/* Delete Button for placeholder trades */}
                   <button
-                    className="absolute top-4 left-4 z-10"
+                    className="absolute top-2 left-2 z-10"
                     onClick={e => { e.stopPropagation(); deleteTrade(group.entry); }}
                     aria-label="Delete trade"
-                    style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '9999px', padding: 4 }}
+                    style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '9999px', padding: 3 }}
                   >
                     <motion.span
                       initial={{ scale: 0.8 }}
                       whileHover={{ scale: 1.1 }}
                       transition={{ type: 'spring', stiffness: 400 }}
                     >
-                      <XMarkIcon className="w-6 h-6 sm:w-8 sm:h-8 text-red-400 hover:text-red-300" />
+                      <XMarkIcon className="w-4 h-4 text-neutral-400 hover:text-neutral-300" />
                     </motion.span>
                   </button>
                 </div>
@@ -885,6 +898,7 @@ const TradesPage = () => {
               </div>
             </motion.div>
           </Tilt>
+        </AnimatePresence>
         ))}
       </motion.div>
       </div>
@@ -1080,7 +1094,7 @@ const TradesPage = () => {
                       deleteTrade(tradeEntry);
                     }
                   }}
-                  className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-all shadow-lg"
+                  className="px-6 py-3 bg-neutral-600 hover:bg-neutral-500 text-white rounded-lg font-semibold transition-all shadow-lg"
                 >
                   Delete
                 </button>
