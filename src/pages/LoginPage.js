@@ -25,23 +25,31 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Email validation function
-  const isValidEmail = (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+  // More flexible validation - allow both old username format and email format
+  const isValidInput = (input) => {
+    // Allow old username format (any characters) or valid email
+    if (!input) return false;
+    
+    // If it looks like an email, validate email format
+    if (input.includes('@')) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return emailRegex.test(input);
+    }
+    
+    // Allow old username format (any non-empty string)
+    return input.trim().length > 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validate email format
     if (!username) {
-      setError('Please enter your email address');
+      setError('Please enter your username or email address');
       return;
     }
     
-    if (!isValidEmail(username)) {
-      setError('Please enter a valid email address (e.g., user@gmail.com)');
+    if (!isValidInput(username)) {
+      setError('Please enter a valid username or email address');
       return;
     }
     
@@ -51,7 +59,17 @@ const LoginPage = () => {
     }
     
     setLoading(true);
-    const email = username; // Use the email directly instead of appending @journal.local
+    
+    // Handle both old username format and email format
+    let email;
+    if (username.includes('@')) {
+      // It's already an email
+      email = username;
+    } else {
+      // It's an old username, append @journal.local to make it a valid email for Firebase
+      email = username + '@journal.local';
+    }
+    
     try {
       if (mode === 'login') {
         await signInWithEmailAndPassword(auth, email, pin);
@@ -71,8 +89,8 @@ const LoginPage = () => {
       <form onSubmit={handleSubmit} className="bg-neutral-900 rounded-2xl shadow-2xl p-10 flex flex-col gap-6 min-w-[320px] max-w-xs">
         <h2 className="text-2xl font-bold text-[#e5e5e5] mb-2">Trading Journal Login</h2>
         <input
-          type="email"
-          placeholder="Email Address (e.g., user@gmail.com)"
+          type="text"
+          placeholder="Username or Email Address"
           value={username}
           onChange={e => { setUsername(e.target.value); setError(''); }}
           className="bg-neutral-800 text-[#e5e5e5] p-3 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-lg"

@@ -18,9 +18,14 @@ import Spinner from '../components/MatrixLoader';
 const getClearTimestampKey = (userId, accountId) => `contextClearTimestamp_${userId}_${accountId}`;
 
 function entryToText(entry) {
+  // Add account information at the top for all entries
+  let lines = [];
+  if (entry.accountName) {
+    lines.push(`Account: ${entry.accountName}`);
+  }
+  
   // Handle tape reading entries
   if (entry.tapeReading) {
-    let lines = [];
     lines.push(`Title: ${entry.title || '(blank)'}`);
     
     // Auto-calculate day of the week from the date for tape readings too
@@ -72,14 +77,15 @@ function entryToText(entry) {
   }
   // Handle deposit entries
   if (entry.isDeposit) {
-    return `Account Balance: $${entry.accountBalance || 0} - ${entry.notes || '(blank)'}`;
+    lines.push(`Account Balance: $${entry.accountBalance || 0} - ${entry.notes || '(blank)'}`);
+    return lines.join("\n");
   }
   // Handle payout entries
   if (entry.isPayout) {
-    return `Payout: $${Math.abs(entry.pnl || 0)} - Account Balance: $${entry.accountBalance || 0} - ${entry.notes || '(blank)'}`;
+    lines.push(`Payout: $${Math.abs(entry.pnl || 0)} - Account Balance: $${entry.accountBalance || 0} - ${entry.notes || '(blank)'}`);
+    return lines.join("\n");
   }
   // Modern trade entry fields - show ALL fields regardless of selection
-  let lines = [];
   lines.push(`Title: ${entry.title || '(blank)'}`);
   lines.push(`Ticker: ${entry.tickerTraded || '(blank)'}`);
   lines.push(`Entry Time: ${entry.entryTime || '(blank)'}`);
@@ -150,7 +156,7 @@ function entryToText(entry) {
 }
 
 const ContextPage = () => {
-  const { currentUser, selectedAccount } = useContext(UserContext);
+  const { currentUser } = useContext(UserContext);
   const [combinedText, setCombinedText] = useState("");
   const [copied, setCopied] = useState(false);
   const [mostRecentCopied, setMostRecentCopied] = useState(false);
@@ -163,28 +169,48 @@ const ContextPage = () => {
   const [clearTimestamp, setClearTimestamp] = useState(null);
 
   useEffect(() => {
-    if (!currentUser || !selectedAccount) return;
+    if (!currentUser) return;
     
-    // Check if there's a clear timestamp for this specific account
-    const timestampKey = getClearTimestampKey(currentUser.uid, selectedAccount.id);
+    // Check if there's a clear timestamp for all accounts
+    const timestampKey = getClearTimestampKey(currentUser.uid, 'all');
     const savedTimestamp = sessionStorage.getItem(timestampKey);
     setClearTimestamp(savedTimestamp ? parseInt(savedTimestamp) : null);
     
     // Always fetch entries from database
     const fetchEntries = async () => {
       setLoading(true);
-      const { db } = await import('../firebase');
-      const { collection, getDocs, query, orderBy } = await import('firebase/firestore');
-      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-      const q = query(entriesCol, orderBy('created', 'desc'));
-      // Force server fetch
-      const snap = await getDocs(q, { source: 'server' });
-      const data = snap.docs.map(doc => doc.data());
-      setEntries(data);
+      // Using static imports from the top of the file
+      
+      // Fetch entries from ALL accounts (not just selected account)
+      let allEntries = [];
+      
+      // Get all accounts for the current user
+      const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
+      const accountsSnap = await getDocs(accountsCol);
+      const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Fetch entries from each account
+      for (const account of accounts) {
+        const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', account.id, 'entries');
+        const q = query(entriesCol, orderBy('created', 'desc'));
+        // Force server fetch
+        const snap = await getDocs(q, { source: 'server' });
+        const accountEntries = snap.docs.map(doc => ({ 
+          ...doc.data(), 
+          accountId: account.id,
+          accountName: account.name
+        }));
+        allEntries.push(...accountEntries);
+      }
+      
+      // Sort all entries by creation date (newest first)
+      allEntries.sort((a, b) => new Date(b.created) - new Date(a.created));
+      
+      setEntries(allEntries);
       setLoading(false);
     };
     fetchEntries();
-  }, [currentUser, selectedAccount]);
+  }, [currentUser]); // Remove selectedAccount dependency since we're fetching from all accounts
 
   const sortedEntries = useMemo(() => {
     let filteredEntries = [...entries];
@@ -364,12 +390,12 @@ const ContextPage = () => {
   };
 
   const handleClear = () => {
-    if (!currentUser || !selectedAccount) return;
+    if (!currentUser) return;
     const currentTime = Date.now();
     setClearTimestamp(currentTime);
-    const timestampKey = getClearTimestampKey(currentUser.uid, selectedAccount.id);
+    const timestampKey = getClearTimestampKey(currentUser.uid, 'all');
     sessionStorage.setItem(timestampKey, currentTime.toString());
-    console.log('ContextPage cleared at timestamp:', currentTime);
+    console.log('ContextPage cleared for all accounts at timestamp:', currentTime);
   };
 
   const llmPrompt = `You are a trade stat tracker. Every time I paste a trade, extract and log the values below. Track win rates, average P&L, and patterns for each.
@@ -447,17 +473,37 @@ track and show stats. you can share opinions or analysis but keep in minimal`;
 
   // Manual refresh handler - fetches fresh data but respects clear timestamp
   const handleManualRefresh = async () => {
-    if (!currentUser || !selectedAccount) return;
+    if (!currentUser) return;
     setLoading(true);
-    const { db } = await import('../firebase');
-    const { collection, getDocs, query, orderBy } = await import('firebase/firestore');
-    const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-    const q = query(entriesCol, orderBy('created', 'desc'));
-    const snap = await getDocs(q, { source: 'server' });
-    const data = snap.docs.map(doc => doc.data());
-    setEntries(data);
+    // Using static imports from the top of the file
+    
+    // Fetch entries from ALL accounts (not just selected account)
+    let allEntries = [];
+    
+    // Get all accounts for the current user
+    const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
+    const accountsSnap = await getDocs(accountsCol);
+    const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Fetch entries from each account
+    for (const account of accounts) {
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', account.id, 'entries');
+      const q = query(entriesCol, orderBy('created', 'desc'));
+      const snap = await getDocs(q, { source: 'server' });
+      const accountEntries = snap.docs.map(doc => ({ 
+        ...doc.data(), 
+        accountId: account.id,
+        accountName: account.name
+      }));
+      allEntries.push(...accountEntries);
+    }
+    
+    // Sort all entries by creation date (newest first)
+    allEntries.sort((a, b) => new Date(b.created) - new Date(a.created));
+    
+    setEntries(allEntries);
     setLoading(false);
-    console.log('ContextPage refreshed, fetched', data.length, 'entries');
+    console.log('ContextPage refreshed, fetched', allEntries.length, 'entries from all accounts');
   };
 
 

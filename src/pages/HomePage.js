@@ -15,7 +15,7 @@ const months = [
 ];
 
 const HomePage = () => {
-  const { currentUser, selectedAccount } = useContext(UserContext);
+  const { currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
   const navigate = useNavigate();
   // Year dropdown logic: always start at 2025, go up to 2035
   const currentYear = new Date().getFullYear();
@@ -31,6 +31,7 @@ const HomePage = () => {
       return;
     }
     const fetchEntries = async () => {
+      console.log('🔄 HomePage: Fetching entries for:', selectedAccount.name, 'Trigger:', dataRefreshTrigger);
       setLoading(true);
       try {
         const { db } = await import('../firebase');
@@ -38,6 +39,15 @@ const HomePage = () => {
         const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
         const snap = await getDocs(entriesCol);
         const data = snap.docs.map(doc => doc.data());
+        
+        console.log('📊 HomePage: Retrieved entries:', data.length);
+        console.log('📊 HomePage: Entry breakdown:', {
+          deposits: data.filter(e => e.isDeposit).length,
+          payouts: data.filter(e => e.isPayout).length,
+          trades: data.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading).length,
+          tapeReadings: data.filter(e => e.isTapeReading).length
+        });
+        
         setEntries(data);
       } catch (error) {
         console.error('Error fetching entries:', error);
@@ -47,7 +57,7 @@ const HomePage = () => {
       }
     };
     fetchEntries();
-  }, [currentUser, selectedAccount]);
+  }, [currentUser, selectedAccount, dataRefreshTrigger]);
 
   useEffect(() => {
     console.log('HomePage user:', currentUser, 'entries:', entries, 'loading:', loading);
@@ -67,12 +77,12 @@ const HomePage = () => {
       }
     });
     
-    entries.forEach(entry => {
+            entries.forEach(entry => {
       if (String(entry.year) === String(year)) {
         const idx = parseInt(entry.month, 10) - 1;
         if (idx >= 0 && idx < 12) {
-          // Only count actual trades (not deposits, payouts, or tape reading)
-          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined && entry.pnl !== null && entry.pnl !== "";
+          // Only count actual trades (not deposits, payouts, tape reading, or reset-excluded)
+          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && !entry.isResetExcluded && entry.pnl !== undefined && entry.pnl !== null && entry.pnl !== "";
           if (isActualTrade) {
             data[idx].pnl += Number(entry.pnl) || 0;
             data[idx].count += 1;

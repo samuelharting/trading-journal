@@ -16,7 +16,7 @@ const RobotIcon = () => (
 );
 
 const NavBar = () => {
-  const { accounts, selectedAccount, setSelectedAccount, setAccounts, currentUser, setShowDeleteConfirm, setAccountToDelete } = useContext(UserContext);
+  const { accounts, selectedAccount, setSelectedAccount, setAccounts, currentUser, setShowDeleteConfirm, setAccountToDelete, triggerDataRefresh } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
   const [showReset, setShowReset] = useState(false);
@@ -55,20 +55,61 @@ const NavBar = () => {
   ];
 
   const handleReset = async () => {
+    if (!window.confirm('Are you sure you want to reset this account? This will:\n• Delete deposits and payouts\n• Mark trades as "reset" (excluded from this account\'s P&L)\n• Trades will still be visible on Trades page (cross-account)\n• Account balance and percentages will be reset to 0')) return;
+    
     setResetting(true);
     if (!currentUser || !selectedAccount) return;
     
-    // Delete all journal entries (trades, deposits, payouts) for the selected account only
-    const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-    const snap = await getDocs(entriesCol);
-    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries', docSnap.id))));
-    
-    // Note: Notebook data is stored in localStorage and is already user-specific (not account-specific)
-    // So it will automatically be preserved across all accounts for this user
-    
-    setResetting(false);
-    setShowReset(false);
-    window.location.reload();
+    try {
+      const { updateDoc } = await import('firebase/firestore');
+      
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
+      const snap = await getDocs(entriesCol);
+      
+      const entriesToDelete = [];
+      const entriesToMarkReset = [];
+      
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.isDeposit || data.isPayout) {
+          entriesToDelete.push(docSnap);
+        } else if (!data.isTapeReading) {
+          // Mark trades as reset-excluded (but keep tape readings visible)
+          entriesToMarkReset.push(docSnap);
+        }
+      });
+      
+      // Delete deposits and payouts
+      if (entriesToDelete.length > 0) {
+        await Promise.all(entriesToDelete.map(docSnap => 
+          deleteDoc(doc(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries', docSnap.id))
+        ));
+      }
+      
+      // Mark trades as reset (exclude from account P&L but keep for TradesPage)
+      if (entriesToMarkReset.length > 0) {
+        await Promise.all(entriesToMarkReset.map(docSnap => 
+          updateDoc(doc(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries', docSnap.id), {
+            isResetExcluded: true,
+            resetDate: new Date().toISOString(),
+            resetAccountName: selectedAccount.name
+          })
+        ));
+      }
+      
+      console.log(`NavBar Reset: Deleted ${entriesToDelete.length} deposits/payouts, marked ${entriesToMarkReset.length} trades as reset`);
+      
+      // Note: Notebook data is stored in localStorage and is already user-specific (not account-specific)
+      // So it will automatically be preserved across all accounts for this user
+      
+    } catch (error) {
+      console.error('❌ NavBar Reset Error:', error);
+      alert('Error during reset: ' + error.message);
+    } finally {
+      setResetting(false);
+      setShowReset(false);
+      triggerDataRefresh();
+    }
   };
 
 

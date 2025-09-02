@@ -13,7 +13,7 @@ import { getTradingPerformance } from '../statsUtils';
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const MonthPage = () => {
-  const { currentUser, selectedAccount } = useContext(UserContext);
+  const { currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
   const { year, month } = useParams();
   const navigate = useNavigate();
   const monthIndex = parseInt(month, 10) - 1;
@@ -35,7 +35,7 @@ const MonthPage = () => {
       setLoading(false);
     };
     fetchEntries();
-  }, [currentUser, selectedAccount, year, month]);
+  }, [currentUser, selectedAccount, year, month, dataRefreshTrigger]);
 
   useEffect(() => {
     console.log('MonthPage user:', currentUser, 'entries:', entries, 'loading:', loading);
@@ -48,8 +48,8 @@ const MonthPage = () => {
       if (String(entry.year) === String(year) && String(entry.month) === String(month)) {
         const idx = parseInt(entry.day, 10) - 1;
         if (idx >= 0 && idx < daysInMonth) {
-          // Only count actual trades (not deposits, payouts, or tape reading)
-          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && entry.pnl !== undefined && entry.pnl !== null && entry.pnl !== "";
+          // Only count actual trades (not deposits, payouts, tape reading, or reset-excluded)
+          const isActualTrade = !entry.isDeposit && !entry.isPayout && !entry.isTapeReading && !entry.isResetExcluded && entry.pnl !== undefined && entry.pnl !== null && entry.pnl !== "";
           if (isActualTrade) {
             data[idx].pnl += Number(entry.pnl) || 0;
             data[idx].count += 1;
@@ -84,6 +84,7 @@ const MonthPage = () => {
       !e.isDeposit && 
       !e.isPayout && 
       !e.isTapeReading &&
+      !e.isResetExcluded &&
       e.pnl !== undefined &&
       e.pnl !== null &&
       e.pnl !== ""

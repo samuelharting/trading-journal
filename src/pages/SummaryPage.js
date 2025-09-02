@@ -26,11 +26,12 @@ function sumPrecise(arr) {
 
 function getStats(entries) {
   if (!entries.length) return null;
-  // Only include entries that are actual trades (not deposits, payouts, or tape reading)
+  // Only include entries that are actual trades (not deposits, payouts, tape reading, or reset-excluded)
   const tradeEntries = entries.filter(e => 
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading && 
+    !e.isResetExcluded && // Exclude trades marked as reset
     e.pnl !== undefined && 
     e.pnl !== null && 
     e.pnl !== ""
@@ -50,7 +51,7 @@ function getStats(entries) {
   const avgWinningTrade = winningTrades.length ? sumPrecise(winningTrades.map(e => e.pnl)) / winningTrades.length : 0;
   const avgLosingTrade = losingTrades.length ? sumPrecise(losingTrades.map(e => e.pnl)) / losingTrades.length : 0;
   
-  // Group by week/month for averages (ONLY TRADES, not deposits/payouts)
+  // Group by week/month for averages (ONLY TRADES, not deposits/payouts/reset-excluded)
   const byWeek = {};
   const byMonth = {};
   tradeEntries.forEach(e => {
@@ -175,13 +176,15 @@ function getEquityCurve(entries) {
       displayPnl = Math.abs(payoutAmount); // Show positive amount for display
       shouldAddToCurve = true;
       console.log(`  ${i + 1}. PAYOUT [${entryDate}]: ${payoutAmount} → $${prevBal} + (${payoutAmount}) = $${balance}`);
-    } else if (!e.tapeReading && !e.isTapeReading) {
-      const tradePnl = Number(e.pnl) || 0;
-      balance += tradePnl;
-      entryType = 'Trade';
-      displayPnl = tradePnl;
-      shouldAddToCurve = true;
-      console.log(`  ${i + 1}. TRADE [${entryDate}]: ${tradePnl >= 0 ? '+' : ''}$${tradePnl} → $${prevBal} + $${tradePnl} = $${balance}`);
+          } else if (!e.tapeReading && !e.isTapeReading && !e.isResetExcluded) {
+        const tradePnl = Number(e.pnl) || 0;
+        balance += tradePnl;
+        entryType = 'Trade';
+        displayPnl = tradePnl;
+        shouldAddToCurve = true;
+        console.log(`  ${i + 1}. TRADE [${entryDate}]: ${tradePnl >= 0 ? '+' : ''}$${tradePnl} → $${prevBal} + $${tradePnl} = $${balance}`);
+      } else if (e.isResetExcluded) {
+        console.log(`  ${i + 1}. RESET-EXCLUDED TRADE [${entryDate}]: ignored (excluded from account P&L)`);
     } else {
       console.log(`  ${i + 1}. TAPE READING [${entryDate}]: ignored (no P&L impact)`);
     }
@@ -239,7 +242,7 @@ function getStreaks(entries) {
 
   // Filter and sort trades by date to ensure chronological order
   const tradingEntries = entries
-    .filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading && e.pnl !== undefined && e.pnl !== null && e.pnl !== "")
+    .filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading && !e.isResetExcluded && e.pnl !== undefined && e.pnl !== null && e.pnl !== "")
     .sort((a, b) => getEntryDate(a) - getEntryDate(b));
 
   let greenStreak = 0, lossStreak = 0, maxGreen = 0, maxLoss = 0;
@@ -269,11 +272,12 @@ function getStreaks(entries) {
 
 function getDailyPnl(entries) {
   const byDay = {};
-  // Only count actual trades (not deposits, payouts, or tape reading)
+  // Only count actual trades (not deposits, payouts, tape reading, or reset-excluded)
   entries.filter(e => 
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading &&
+    !e.isResetExcluded &&
     e.pnl !== undefined &&
     e.pnl !== null &&
     e.pnl !== ""
@@ -495,17 +499,19 @@ function getPercentageChanges(entries, currentBalance) {
       .map(e => Number(e.pnl) || 0) // Already negative
   );
   
-  const startingCapital = totalDeposits + totalPayouts; // totalPayouts is negative, so this subtracts
+  // For percentage calculations, we need the ORIGINAL invested capital
+  // This should be total deposits (don't subtract payouts for percentage base)
+  const originalCapital = totalDeposits;
   
-  // Calculate total trading P&L (excluding deposits and payouts)
+  // Calculate total trading P&L (excluding deposits, payouts, and reset-excluded trades)
   const totalTradingPnl = sumPrecise(
     sortedEntries
-      .filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading)
+      .filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading && !e.isResetExcluded)
       .map(e => Number(e.pnl) || 0)
   );
   
-  // Overall account performance (trading performance only)
-  const overallPercentage = startingCapital > 0 ? (totalTradingPnl / startingCapital) * 100 : 0;
+  // Overall account performance (trading performance only based on original capital)
+  const overallPercentage = originalCapital > 0 ? (totalTradingPnl / originalCapital) * 100 : 0;
   
   // For day/week/month calculations, we'll show overall performance since 
   // the user specifically mentioned the issue with period-based calculations
@@ -520,7 +526,7 @@ function getPercentageChanges(entries, currentBalance) {
   // Helper function to get trades in a specific period
   const getTradesInPeriod = (startDate, endDate) => {
     return sortedEntries.filter(e => {
-      if (e.isDeposit || e.isPayout || e.isTapeReading) return false;
+      if (e.isDeposit || e.isPayout || e.isTapeReading || e.isResetExcluded) return false;
       const entryDate = getEntryDate(e);
       return entryDate >= startDate && entryDate <= endDate;
     });
@@ -551,9 +557,9 @@ function getPercentageChanges(entries, currentBalance) {
   // Option 2: Show overall performance in all cards
   // I'll implement Option 1 as per user's request
   
-  const dayPercentage = todayTrades.length > 0 && startingCapital > 0 ? (dayPnl / startingCapital) * 100 : 0;
-  const weekPercentage = weekTrades.length > 0 && startingCapital > 0 ? (weekPnl / startingCapital) * 100 : 0;
-  const monthPercentage = monthTrades.length > 0 && startingCapital > 0 ? (monthPnl / startingCapital) * 100 : 0;
+  const dayPercentage = todayTrades.length > 0 && originalCapital > 0 ? (dayPnl / originalCapital) * 100 : 0;
+  const weekPercentage = weekTrades.length > 0 && originalCapital > 0 ? (weekPnl / originalCapital) * 100 : 0;
+  const monthPercentage = monthTrades.length > 0 && originalCapital > 0 ? (monthPnl / originalCapital) * 100 : 0;
   
   const result = {
     day: { 
@@ -574,12 +580,14 @@ function getPercentageChanges(entries, currentBalance) {
     overall: {
       pnl: totalTradingPnl,
       percentage: overallPercentage,
-      startingCapital: startingCapital
+      startingCapital: originalCapital
     }
   };
   
   console.log('📊 FIXED getPercentageChanges DEBUG:');
-  console.log('  Starting Capital (Deposits - Payouts):', startingCapital);
+  console.log('  Total Deposits:', totalDeposits);
+  console.log('  Total Payouts:', totalPayouts);
+  console.log('  Original Capital (for % calc):', originalCapital);
   console.log('  Total Trading P&L:', totalTradingPnl);
   console.log('  Overall Performance:', overallPercentage.toFixed(2) + '%');
   console.log('  Day - P&L:', dayPnl, 'Percentage:', dayPercentage.toFixed(2) + '% (', todayTrades.length, 'trades)');
@@ -590,7 +598,7 @@ function getPercentageChanges(entries, currentBalance) {
 }
 
 const SummaryPage = () => {
-  const { currentUser, selectedAccount } = useContext(UserContext);
+  const { currentUser, selectedAccount, dataRefreshTrigger, triggerDataRefresh } = useContext(UserContext);
   const [stats, setStats] = useState(null);
   const [curveData, setCurveData] = useState({ curve: [], points: [] });
   const [streaks, setStreaks] = useState({});
@@ -599,61 +607,47 @@ const SummaryPage = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  const fetchEntries = useCallback(async () => {
-    if (!currentUser || !selectedAccount) return;
-    console.log('🔄 SummaryPage: Fetching entries for:', selectedAccount.name);
-    setLoading(true);
-    try {
-      const { db } = await import('../firebase');
-      const { collection, getDocs } = await import('firebase/firestore');
-      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-      const snap = await getDocs(entriesCol);
-      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-      
-      console.log('📊 SummaryPage: Retrieved entries:', data.length);
-      console.log('📊 SummaryPage: Sample entries:', data.slice(0, 3));
-      
-      setEntries(data);
-      const statsResult = getStats(data);
-      const curveResult = getEquityCurve(data);
-      
-      console.log('📈 SummaryPage: Stats result:', statsResult);
-      console.log('📈 SummaryPage: Curve result:', curveResult);
-      
-      setStats(statsResult);
-      setCurveData(curveResult);
-      setStreaks(getStreaks(data));
-      setDailyPnl(getDailyPnl(data));
-    } catch (error) {
-      console.error('❌ SummaryPage: Error fetching entries:', error);
-    }
-    setLoading(false);
-  }, [currentUser, selectedAccount]);
-
   useEffect(() => {
-    fetchEntries();
-  }, [fetchEntries]);
-
-  // Refetch data when window/tab becomes visible (e.g., navigating back from edit page)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        fetchEntries();
+    const fetchEntries = async () => {
+      if (!currentUser || !selectedAccount) return;
+      console.log('🔄 SummaryPage: Fetching entries for:', selectedAccount.name, 'Trigger:', dataRefreshTrigger);
+      setLoading(true);
+      try {
+        const { db } = await import('../firebase');
+        const { collection, getDocs } = await import('firebase/firestore');
+        const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
+        const snap = await getDocs(entriesCol);
+        const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        
+        console.log('📊 SummaryPage: Retrieved entries:', data.length);
+        console.log('📊 SummaryPage: Entry breakdown:', {
+          deposits: data.filter(e => e.isDeposit).length,
+          payouts: data.filter(e => e.isPayout).length,
+          trades: data.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading).length,
+          tapeReadings: data.filter(e => e.isTapeReading).length
+        });
+        
+        setEntries(data);
+        const statsResult = getStats(data);
+        const curveResult = getEquityCurve(data);
+        
+        console.log('📈 SummaryPage: Stats result:', statsResult);
+        console.log('📈 SummaryPage: Curve result balance:', curveResult?.points?.length ? curveResult.points[curveResult.points.length - 1]?.y : 0);
+        
+        setStats(statsResult);
+        setCurveData(curveResult);
+        setStreaks(getStreaks(data));
+        setDailyPnl(getDailyPnl(data));
+      } catch (error) {
+        console.error('❌ SummaryPage: Error fetching entries:', error);
       }
+      setLoading(false);
     };
+    
+    fetchEntries();
+  }, [currentUser, selectedAccount, dataRefreshTrigger]);
 
-    const handleFocus = () => {
-      fetchEntries();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [fetchEntries]);
+  // Note: Removed visibility/focus refresh since we now have triggerDataRefresh mechanism
 
 
 
@@ -724,10 +718,12 @@ const SummaryPage = () => {
         // For payouts, subtract the amount (pnl should already be negative)
         bal += Number(e.pnl) || 0;
         console.log(`  ${index + 1}. PAYOUT [${entryDate}]: ${e.pnl} → ${prevBal} + ${e.pnl} = ${bal}`);
-      } else if (!e.isTapeReading) {
+      } else if (!e.isTapeReading && !e.isResetExcluded) {
         // For trades, add the P&L to the previous balance
         bal += Number(e.pnl) || 0;
         console.log(`  ${index + 1}. TRADE [${entryDate}]: ${e.pnl} → ${prevBal} + ${e.pnl} = ${bal}`);
+      } else if (e.isResetExcluded) {
+        console.log(`  ${index + 1}. RESET-EXCLUDED TRADE [${entryDate}]: ${e.pnl} (ignored for account balance)`);
       } else {
         console.log(`  ${index + 1}. TAPE READING [${entryDate}]: ignored`);
       }
@@ -759,11 +755,12 @@ const SummaryPage = () => {
   const mostRecentWeek = weeklyRows.length > 0 ? weeklyRows[0] : null;
   const mostRecentMonth = monthlyRows.length > 0 ? monthlyRows[0] : null;
 
-  // Only consider actual trades (not deposits, payouts, or tape reading) for best/worst/recent
+  // Only consider actual trades (not deposits, payouts, tape reading, or reset-excluded) for best/worst/recent
   const tradeEntries = entries.filter(e => 
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading && 
+    !e.isResetExcluded &&
     typeof e.pnl === 'number' && 
     !isNaN(e.pnl)
   );
@@ -862,27 +859,80 @@ const SummaryPage = () => {
   const mostRecentMonthPnl = mostRecentMonthKey ? stats.byMonth[mostRecentMonthKey] : 0;
 
   const handleReset = async () => {
-    if (!window.confirm('Are you sure you want to reset your account? This will delete ALL your journal entries, screenshots, and cannot be undone.')) return;
+    if (!window.confirm('Are you sure you want to reset this account? This will:\n• Delete deposits and payouts\n• Mark trades as "reset" (excluded from this account\'s P&L)\n• Trades will still be visible on Trades page (cross-account)\n• Account balance and percentages will be reset to 0')) return;
     if (!currentUser || !selectedAccount) return;
-    // Delete all entries for this account
-    const { db, storage } = await import('../firebase');
-    const { collection, getDocs, deleteDoc, doc } = await import('firebase/firestore');
-    const { ref, listAll, deleteObject } = await import('firebase/storage');
-    const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-    const snap = await getDocs(entriesCol);
-    await Promise.all(snap.docs.map(docSnap => deleteDoc(doc(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries', docSnap.id))));
-    // Delete all screenshots for this account
-    const screenshotsRef = ref(storage, `screenshots/${currentUser.uid}/${selectedAccount.id}`);
+    
+    console.log('🔄 Starting account reset for:', selectedAccount.name);
+    
     try {
-      const list = await listAll(screenshotsRef);
-      await Promise.all(list.items.map(itemRef => deleteObject(itemRef)));
-    } catch (err) {
-      // It's ok if there are no screenshots
-      if (err.code !== 'storage/object-not-found') {
-        console.error('Error deleting screenshots:', err);
+      const { db } = await import('../firebase');
+      const { collection, getDocs, deleteDoc, doc, updateDoc } = await import('firebase/firestore');
+      
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
+      const snap = await getDocs(entriesCol);
+      
+      console.log('📊 Total entries found:', snap.docs.length);
+      
+      const entriesToDelete = [];
+      const entriesToMarkReset = [];
+      
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.isDeposit || data.isPayout) {
+          entriesToDelete.push(docSnap);
+          console.log('🗑️ Will delete:', data.isDeposit ? 'Deposit' : 'Payout', data.pnl);
+        } else if (!data.isTapeReading) {
+          // Mark trades as reset-excluded (but keep tape readings visible)
+          entriesToMarkReset.push(docSnap);
+          console.log('🏷️ Will mark as reset:', 'Trade', data.title || data.tickerTraded, data.pnl);
+        } else {
+          console.log('✅ Will keep visible:', 'Tape Reading', data.title);
+        }
+      });
+      
+      console.log(`📈 Reset plan: Delete ${entriesToDelete.length} deposits/payouts, Mark ${entriesToMarkReset.length} trades as reset, Keep tape readings`);
+      
+      // Delete deposits and payouts
+      if (entriesToDelete.length > 0) {
+        await Promise.all(entriesToDelete.map(docSnap => 
+          deleteDoc(doc(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries', docSnap.id))
+        ));
+        console.log('✅ Deleted deposits/payouts');
       }
+      
+      // Mark trades as reset (exclude from account P&L but keep for TradesPage)
+      if (entriesToMarkReset.length > 0) {
+        await Promise.all(entriesToMarkReset.map(docSnap => 
+          updateDoc(doc(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries', docSnap.id), {
+            isResetExcluded: true,
+            resetDate: new Date().toISOString(),
+            resetAccountName: selectedAccount.name
+          })
+        ));
+        console.log('✅ Marked trades as reset-excluded');
+      }
+      
+      console.log('✅ Account reset completed successfully');
+      
+      // Force refresh all data
+      console.log('🔄 Triggering data refresh...');
+      if (triggerDataRefresh) {
+        triggerDataRefresh();
+        console.log('✅ Data refresh triggered successfully');
+      } else {
+        console.error('❌ triggerDataRefresh not available, falling back to reload');
+        window.location.reload();
+      }
+      
+      // Give a small delay to ensure the refresh propagates
+      setTimeout(() => {
+        console.log('🔄 Data refresh completed');
+      }, 500);
+      
+    } catch (error) {
+      console.error('❌ Error during reset:', error);
+      alert('Error during reset: ' + error.message);
     }
-    window.location.reload();
   };
 
   // Remove any button or link that navigates to or shows 'Edit Account' on the summary page.

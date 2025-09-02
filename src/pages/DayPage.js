@@ -53,7 +53,7 @@ function extractTimestamp(created) {
 }
 
 const DayPage = () => {
-  const { currentUser, selectedAccount } = useContext(UserContext);
+  const { currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
   const { month, day } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -87,12 +87,17 @@ const DayPage = () => {
         const bTimestamp = extractTimestamp(b.created);
         return new Date(bTimestamp) - new Date(aTimestamp);
       });
-      console.log('Sorted entries:', sortedData.map(e => ({ id: e.id, created: e.created, ticker: e.tickerTraded })));
+      console.log('DayPage: Sorted entries:', sortedData.map(e => ({ id: e.id, created: e.created, ticker: e.tickerTraded, isResetExcluded: e.isResetExcluded })));
+      console.log('DayPage: Entries breakdown:', {
+        total: sortedData.length,
+        resetExcluded: sortedData.filter(e => e.isResetExcluded).length,
+        visible: sortedData.filter(e => !e.isResetExcluded).length
+      });
       setEntries(sortedData);
       setLoading(false);
     };
     fetchEntries();
-  }, [currentUser, selectedAccount, month, day]);
+  }, [currentUser, selectedAccount, month, day, dataRefreshTrigger]);
 
   useEffect(() => {
     console.log('DayPage user:', currentUser, 'entries:', entries, 'loading:', loading);
@@ -165,7 +170,7 @@ const DayPage = () => {
           </button>
         )}
       </div>
-      {loading ? <div className="flex justify-center items-center py-24"><Spinner size={48} /></div> : <JournalEntryList entries={entries} />}
+      {loading ? <div className="flex justify-center items-center py-24"><Spinner size={48} /></div> : <JournalEntryList entries={entries.filter(entry => !entry.isResetExcluded)} />}
       {showForm && (
         <JournalEntryForm 
           onSave={(savedEntry) => {

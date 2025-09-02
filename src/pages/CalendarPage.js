@@ -10,7 +10,7 @@ const months = [
 
 
 const HomePage = () => {
-  const { currentUser, selectedAccount } = useContext(UserContext);
+  const { currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
   const navigate = useNavigate();
   const year = new Date().getFullYear();
   const [entries, setEntries] = useState([]);
@@ -43,6 +43,7 @@ const HomePage = () => {
               !e.isDeposit && 
               !e.isPayout && 
               !e.isTapeReading &&
+              !e.isResetExcluded &&
               e.pnl !== undefined &&
               e.pnl !== null &&
               e.pnl !== ""
@@ -84,7 +85,7 @@ const HomePage = () => {
     };
     
     fetchEntries();
-  }, [currentUser, selectedAccount, year]);
+  }, [currentUser, selectedAccount, year, dataRefreshTrigger]);
 
   return (
     <div className="flex flex-col items-center">

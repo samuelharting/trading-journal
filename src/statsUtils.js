@@ -3,13 +3,14 @@
 // Get daily PnL for a given year and month
 export function getDailyPnl(entries, year, month) {
   const byDay = {};
-  // Only count actual trades (not deposits, payouts, or tape reading)
+  // Only count actual trades (not deposits, payouts, tape reading, or reset-excluded)
   entries.filter(e => 
     String(e.year) === String(year) && 
     String(e.month) === String(month) &&
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading &&
+    !e.isResetExcluded &&
     e.pnl !== undefined &&
     e.pnl !== null &&
     e.pnl !== ""
@@ -31,6 +32,7 @@ export function getWeeklyPnls(entries, year, month, calendarGrid) {
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading &&
+    !e.isResetExcluded &&
     e.pnl !== undefined &&
     e.pnl !== null &&
     e.pnl !== ""
@@ -68,6 +70,7 @@ export function getMonthlyPnl(entries, year, month) {
     !e.isDeposit && 
     !e.isPayout && 
     !e.isTapeReading &&
+    !e.isResetExcluded &&
     e.pnl !== undefined &&
     e.pnl !== null &&
     e.pnl !== ""
@@ -115,10 +118,11 @@ export function getTradingPerformance(entries, targetYear = null, targetMonth = 
       .map(e => Number(e.pnl) || 0) // Already negative
   );
   
-  const startingCapital = totalDeposits + totalPayouts; // totalPayouts is negative, so this subtracts
+  // For percentage calculations, use original capital (total deposits only)
+  const originalCapital = totalDeposits;
   
   // If specific year/month requested, filter trades to that period
-  let tradesToAnalyze = sortedEntries.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading);
+  let tradesToAnalyze = sortedEntries.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading && !e.isResetExcluded);
   
   if (targetYear !== null && targetMonth !== null) {
     tradesToAnalyze = tradesToAnalyze.filter(e => 
@@ -129,13 +133,13 @@ export function getTradingPerformance(entries, targetYear = null, targetMonth = 
   // Calculate total trading P&L for the period
   const tradingPnl = sumPrecise(tradesToAnalyze.map(e => Number(e.pnl) || 0));
   
-  // Calculate performance percentage
-  const performancePercentage = startingCapital > 0 ? (tradingPnl / startingCapital) * 100 : 0;
+  // Calculate performance percentage based on original capital
+  const performancePercentage = originalCapital > 0 ? (tradingPnl / originalCapital) * 100 : 0;
   
   return {
     pnl: tradingPnl,
     percentage: performancePercentage,
-    startingCapital: startingCapital,
+    startingCapital: originalCapital,
     progressToward20Percent: Math.min(100, Math.max(0, (performancePercentage / 20) * 100)),
     hasTrades: tradesToAnalyze.length > 0
   };
@@ -160,8 +164,8 @@ export function getCurrentBalance(entries) {
       const payoutAmount = Number(e.pnl) || 0; // Already negative
       bal += payoutAmount;
       totalPayouts += Math.abs(payoutAmount);
-    } else if (!e.isTapeReading) {
-      // For trades, add the P&L to the previous balance
+    } else if (!e.isTapeReading && !e.isResetExcluded) {
+      // For trades, add the P&L to the previous balance (exclude reset-excluded trades)
       bal += Number(e.pnl) || 0;
     }
     // Tape reading entries don't affect balance

@@ -10,7 +10,7 @@ import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import Spinner from '../components/MatrixLoader';
 
 const TradesPage = () => {
-  const { user, currentUser, selectedAccount } = useContext(UserContext);
+  const { user, currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
   const { setShowHeader } = useHeader();
   const [groupedImages, setGroupedImages] = useState([]);
   const [allImages, setAllImages] = useState([]);
@@ -26,18 +26,58 @@ const TradesPage = () => {
   const [selectedMonth, setSelectedMonth] = useState((new Date().getMonth() + 1).toString());
   const [filteredGroups, setFilteredGroups] = useState([]);
   const [showFilter, setShowFilter] = useState(false);
+  const [showAllTrades, setShowAllTrades] = useState(false);
   
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!currentUser || !selectedAccount) return;
     const fetchData = async () => {
-      const { db } = await import('../firebase');
-      const { collection, getDocs, doc, getDoc, setDoc } = await import('firebase/firestore');
-      // Fetch all entries for selected account
-      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
-      const snap = await getDocs(entriesCol);
-      const allEntries = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).sort((a, b) => {
+      // Using static imports from the top of the file
+      
+      // TRADES & TAPE READINGS: Fetch from ALL accounts (cross-account)
+      let allTradesAndTapeReadings = [];
+      
+      // Get all accounts for the current user
+      const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
+      const accountsSnap = await getDocs(accountsCol);
+      const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Fetch trades and tape readings from each account
+      for (const account of accounts) {
+        const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', account.id, 'entries');
+        const snap = await getDocs(entriesCol);
+        const accountEntries = snap.docs
+          .map(doc => ({ 
+            ...doc.data(), 
+            id: doc.id,
+            accountId: account.id,
+            accountName: account.name
+          }))
+          .filter(entry => !entry.isDeposit && !entry.isPayout); // Only trades and tape readings
+        allTradesAndTapeReadings.push(...accountEntries);
+      }
+      
+      // DEPOSITS & PAYOUTS: Fetch from ONLY the selected account (account-specific)
+      let selectedAccountDepositsPayouts = [];
+      if (selectedAccount) {
+        const selectedEntriesCol = collection(db, 'users', currentUser.uid, 'accounts', selectedAccount.id, 'entries');
+        const selectedSnap = await getDocs(selectedEntriesCol);
+        selectedAccountDepositsPayouts = selectedSnap.docs
+          .map(doc => ({ 
+            ...doc.data(), 
+            id: doc.id,
+            accountId: selectedAccount.id,
+            accountName: selectedAccount.name
+          }))
+          .filter(entry => entry.isDeposit || entry.isPayout); // Only deposits and payouts
+      }
+      
+      // Combine all entries
+      const allEntries = [...allTradesAndTapeReadings, ...selectedAccountDepositsPayouts];
+      
+      // Sort all entries by creation date (newest first)
+      allEntries.sort((a, b) => {
         // Clean timestamps by removing the random suffix
         const getCleanTimestamp = (created) => {
           if (!created) return '';
@@ -48,8 +88,9 @@ const TradesPage = () => {
         const cleanB = getCleanTimestamp(b.created);
         return new Date(cleanB) - new Date(cleanA);
       });
-      // Fetch favorites
-      const favDoc = await getDoc(doc(db, 'favorites', currentUser.uid + '_' + selectedAccount.id));
+      
+      // Fetch favorites (use a shared favorites collection for all accounts)
+      const favDoc = await getDoc(doc(db, 'favorites', currentUser.uid + '_shared'));
       setFavorites(favDoc.exists() ? favDoc.data().data : {});
       
       // Build grouped images array AND navigation array
@@ -57,13 +98,34 @@ const TradesPage = () => {
       const allImagesArray = []; // For navigation - contains individual images AND placeholder entries
       
       allEntries.forEach(entry => {
-        // For entries with screenshots (trades and tape readings)
+        console.log(`Processing entry: ${entry.title || 'Untitled'} - Screenshots: ${entry.screenshots?.length || 0}, Images: ${entry.images?.length || 0}, Image: ${entry.image ? 'Yes' : 'No'}, Month: ${entry.month}, Day: ${entry.day}, isResetExcluded: ${entry.isResetExcluded}`);
+        
+        // Normalize image data - handle different ways images might be stored
+        let imageArray = [];
+        
         if (entry.screenshots && entry.screenshots.length) {
-          const entryImages = entry.screenshots.map((src, imageIndex) => ({
+          imageArray = [...entry.screenshots];
+        } else if (entry.images && entry.images.length) {
+          imageArray = [...entry.images];
+        } else if (entry.imageUrls && entry.imageUrls.length) {
+          imageArray = [...entry.imageUrls];
+        } else if (entry.image) {
+          imageArray = [entry.image];
+        } else if (entry.screenshot) {
+          imageArray = [entry.screenshot];
+        } else if (entry.imageUrl) {
+          imageArray = [entry.imageUrl];
+        }
+        
+        // For entries with images (any format)
+        if (imageArray.length > 0) {
+          console.log(`📸 Found ${imageArray.length} images for entry: ${entry.title || 'Untitled'}`);
+          
+          const entryImages = imageArray.map((src, imageIndex) => ({
             src,
             created: entry.created,
             entry: entry,
-            link: `/day/${entry.month}/${entry.day}`,
+            link: entry.month && entry.day ? `/day/${entry.month}/${entry.day}` : '#',
             imageIndex: imageIndex, // Track which image within the entry
             isIndividualImage: true
           }));
@@ -84,7 +146,7 @@ const TradesPage = () => {
             src: null,
             created: entry.created,
             entry: entry,
-            link: `/day/${entry.month}/${entry.day}`,
+            link: entry.month && entry.day ? `/day/${entry.month}/${entry.day}` : '#',
             isIndividualImage: false,
             isDeposit: entry.isDeposit,
             isPayout: entry.isPayout
@@ -101,13 +163,13 @@ const TradesPage = () => {
           // Add placeholder to navigation array
           allImagesArray.push(placeholderItem);
         }
-        // For trades/tape readings without screenshots (still show them with placeholder)
+        // For trades/tape readings without any images (still show them with placeholder)
         else if (!entry.isDeposit && !entry.isPayout) {
           const placeholderItem = {
             src: null,
             created: entry.created,
             entry: entry,
-            link: `/day/${entry.month}/${entry.day}`,
+            link: entry.month && entry.day ? `/day/${entry.month}/${entry.day}` : '#',
             isIndividualImage: false,
             isTrade: !entry.tapeReading,
             isTapeReading: entry.tapeReading
@@ -145,8 +207,59 @@ const TradesPage = () => {
       });
       
       // Debug: Log detailed stats
-      console.log('TradesPage - Total entries:', allEntries.length, 'Grouped:', grouped.length);
+      console.log('TradesPage - Cross-account trades/tape readings:', allTradesAndTapeReadings.length, 'Selected account deposits/payouts:', selectedAccountDepositsPayouts.length, 'Total combined:', allEntries.length, 'Grouped:', grouped.length);
       console.log('TradesPage - Entries with screenshots:', allEntries.filter(e => e.screenshots && e.screenshots.length > 0).length);
+      
+      // Debug: Log all entries to help find TGIF MBT
+      console.log('🔍 All entries being processed:');
+      allEntries.forEach((entry, index) => {
+        console.log(`Entry ${index}:`, {
+          title: entry.title,
+          month: entry.month,
+          day: entry.day,
+          year: entry.year,
+          created: entry.created,
+          accountName: entry.accountName,
+          isDeposit: entry.isDeposit,
+          isPayout: entry.isPayout,
+          tapeReading: entry.tapeReading
+        });
+      });
+      
+      // DEBUGGING: Check for old image entries that might be stored differently
+      console.log('🔍 DEBUGGING - All entries with any image-related fields:');
+      let foundOldImages = 0;
+      
+      allEntries.forEach((entry, index) => {
+        // Check for any possible image field
+        const hasAnyImages = entry.screenshots || entry.images || entry.image || entry.screenshot || entry.imageUrl || entry.imageUrls;
+        
+        if (hasAnyImages) {
+          foundOldImages++;
+          console.log(`Entry ${index} - ${entry.title || 'Untitled'}:`, {
+            screenshots: entry.screenshots,
+            images: entry.images,
+            image: entry.image,
+            screenshot: entry.screenshot,
+            imageUrl: entry.imageUrl,
+            imageUrls: entry.imageUrls,
+            title: entry.title,
+            created: entry.created,
+            isResetExcluded: entry.isResetExcluded,
+            accountName: entry.accountName,
+            // Show all fields to see if there are other image-related fields
+            allFields: Object.keys(entry).filter(key => key.toLowerCase().includes('image') || key.toLowerCase().includes('screenshot') || key.toLowerCase().includes('photo') || key.toLowerCase().includes('pic'))
+          });
+        }
+      });
+      
+      console.log(`🔍 DEBUGGING - Found ${foundOldImages} entries with image data out of ${allEntries.length} total entries`);
+      
+      // If we found old images with different field names, log a helpful message
+      if (foundOldImages > 0) {
+        console.log('✅ Good news! Found entries with image data. They should now be visible on the TradesPage.');
+      }
+      
       console.log('TradesPage - Sample entry:', allEntries[0] ? {
         screenshots: allEntries[0].screenshots,
         screenshotsLength: allEntries[0].screenshots?.length,
@@ -155,7 +268,8 @@ const TradesPage = () => {
         tapeReading: allEntries[0].tapeReading,
         created: allEntries[0].created,
         month: allEntries[0].month,
-        day: allEntries[0].day
+        day: allEntries[0].day,
+        accountName: allEntries[0].accountName
       } : 'No entries');
       
       setGroupedImages(grouped);
@@ -163,7 +277,7 @@ const TradesPage = () => {
       setAllEntries(allEntries); // Store all entries for navigation
     };
     fetchData();
-  }, [currentUser, selectedAccount]);
+  }, [currentUser, selectedAccount, dataRefreshTrigger]); // Include selectedAccount since deposits/payouts are account-specific
 
 
 
@@ -186,7 +300,7 @@ const TradesPage = () => {
       Object.entries(updated).filter(([k, v]) => typeof v === "boolean")
     );
     setFavorites(sanitized);
-    await setDoc(doc(db, 'favorites', currentUser.uid + '_' + selectedAccount.id), { data: sanitized });
+    await setDoc(doc(db, 'favorites', currentUser.uid + '_shared'), { data: sanitized });
   };
 
   const openImageViewer = (image, entry) => {
@@ -280,6 +394,12 @@ const TradesPage = () => {
   useEffect(() => {
     if (!groupedImages.length) return;
     
+    // If showAllTrades is enabled, show all trades regardless of date
+    if (showAllTrades) {
+      setFilteredGroups(groupedImages);
+      return;
+    }
+    
     const filtered = groupedImages.filter(group => {
       // First try to use the month/day/year fields (primary approach)
       if (group.entry.month && group.entry.day) {
@@ -316,8 +436,10 @@ const TradesPage = () => {
         }
       }
       
-      // If we can't determine the date, exclude from results
-      return false;
+      // If we can't determine the date, include it in the current month/year view
+      // This ensures trades like "TGIF MBT" that might have date parsing issues still show up
+      console.log('Including trade with unclear date:', group.entry.title || 'Untitled', 'in current month view');
+      return true;
     });
     
     console.log('TradesPage Filter:', groupedImages.length, '→', filtered.length, `(${selectedYear}-${selectedMonth})`);
@@ -330,7 +452,7 @@ const TradesPage = () => {
       });
     }
     setFilteredGroups(filtered);
-  }, [groupedImages, selectedYear, selectedMonth]);
+  }, [groupedImages, selectedYear, selectedMonth, showAllTrades]);
 
   // Month names for the picker
   const monthNames = [
@@ -397,6 +519,24 @@ const TradesPage = () => {
                   ))}
                 </div>
               </div>
+              
+              {/* Show All Trades Toggle */}
+              <div className="w-full md:w-full mt-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showAllTrades}
+                    onChange={(e) => setShowAllTrades(e.target.checked)}
+                    className="w-5 h-5 text-blue-600 bg-neutral-800 border-neutral-600 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <span className="text-neutral-400 font-medium">Show All Trades (Ignore Date Filter)</span>
+                </label>
+                {showAllTrades && (
+                  <div className="text-sm text-blue-400 mt-2">
+                    Showing all trades regardless of month/year selection
+                  </div>
+                )}
+              </div>
             </div>
           </motion.div>
         )}
@@ -419,7 +559,24 @@ const TradesPage = () => {
         {filteredGroups.length === 0 && groupedImages.length > 0 && (
           <div className="flex flex-col items-center justify-center col-span-full py-24">
             <div className="text-2xl font-bold text-[#e5e5e5] mb-2">No entries for {monthNames[parseInt(selectedMonth) - 1]} {selectedYear}</div>
-            <div className="text-lg text-blue-400">Try selecting a different month or year</div>
+            <div className="text-lg text-blue-400 mb-4">Try selecting a different month or year, or use "Show All Trades" to see all entries</div>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => {
+                  setSelectedYear(new Date().getFullYear().toString());
+                  setSelectedMonth((new Date().getMonth() + 1).toString());
+                }}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold transition-all"
+              >
+                Reset to Current Month
+              </button>
+              <button 
+                onClick={() => setShowAllTrades(true)}
+                className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-lg font-semibold transition-all"
+              >
+                Show All Trades
+              </button>
+            </div>
           </div>
         )}
         {filteredGroups.map((group, groupIdx) => (
@@ -442,7 +599,7 @@ const TradesPage = () => {
               transition={{ duration: 0.3, delay: groupIdx * 0.03 }}
               className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 flex flex-col items-center border border-white/20 shadow-xl cursor-pointer group w-full h-full min-h-[280px]"
             >
-              {/* Deposit/Payout or Screenshot Content */}
+              {/* Deposit/Payout or Trade/TapeReading Content */}
               {group.isDeposit ? (
                 // Deposit placeholder
                 <div 
@@ -581,7 +738,7 @@ const TradesPage = () => {
                 </div>
               )}
 
-              {/* Title and Date */}
+              {/* Title, Date, and Account */}
               <div className="mt-auto pt-2 text-center w-full">
                 <div className="text-sm text-white/90 font-medium mb-1 h-[40px] flex items-center justify-center overflow-hidden">
                   <div className="truncate max-w-full px-1 leading-tight" title={group.entry.title || ''}>
@@ -622,6 +779,12 @@ const TradesPage = () => {
                     return 'Invalid Date';
                   })()}
                 </div>
+                {/* Account information */}
+                {group.entry.accountName && (
+                  <div className="text-xs text-blue-400 h-[16px] flex items-center justify-center mt-1">
+                    {group.entry.accountName}
+                  </div>
+                )}
               </div>
             </motion.div>
           </Tilt>
@@ -739,6 +902,14 @@ const TradesPage = () => {
                   </div>
                 </div>
                 
+                {/* Account */}
+                {tradeEntry.accountName && (
+                  <div>
+                    <span className="text-sm text-neutral-400">Account:</span>
+                    <div className="text-blue-400 font-semibold">{tradeEntry.accountName}</div>
+                  </div>
+                )}
+                
                 {/* Ticker (Trade only) */}
                 {tradeEntry.tickerTraded && !tradeEntry.isDeposit && !tradeEntry.isPayout && (
                   <div>
@@ -762,7 +933,9 @@ const TradesPage = () => {
                     }`}>
                       {tradeEntry.isPayout ? 
                         `$${Math.abs(Number(tradeEntry.pnl)).toFixed(2)}` : 
-                        `${Number(tradeEntry.pnl) > 0 ? '+' : ''}${Number(tradeEntry.pnl).toFixed(2)}`
+                        tradeEntry.isDeposit ?
+                        `$${Number(tradeEntry.pnl).toFixed(2)}` :
+                        `${Number(tradeEntry.pnl) > 0 ? '+' : ''}$${Number(tradeEntry.pnl).toFixed(2)}`
                       }
                     </div>
                   </div>

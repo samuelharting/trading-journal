@@ -23,6 +23,7 @@ function App() {
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState(null);
+  const [dataRefreshTrigger, setDataRefreshTrigger] = useState(0);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -109,7 +110,9 @@ function App() {
       setSelectedAccount, 
       setAccounts,
       setShowDeleteConfirm,
-      setAccountToDelete
+      setAccountToDelete,
+      dataRefreshTrigger,
+      triggerDataRefresh: () => setDataRefreshTrigger(prev => prev + 1)
     }}>
       <Router>
         {currentUser ? (
