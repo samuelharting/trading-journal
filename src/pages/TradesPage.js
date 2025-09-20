@@ -802,9 +802,9 @@ const TradesPage = () => {
                           </motion.div>
                         ))}
                         
-                        {/* Image Count Badge */}
+                        {/* Image Count Badge - moved to bottom to avoid overlap with star icon */}
                         <motion.div 
-                          className="absolute top-2 right-2 z-20 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full px-3 py-1 text-sm font-bold shadow-lg"
+                          className="absolute bottom-2 left-2 z-20 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full px-3 py-1 text-sm font-bold shadow-lg"
                           initial={{ scale: 0, opacity: 0 }}
                           animate={{ scale: 1, opacity: 1 }}
                           transition={{ 

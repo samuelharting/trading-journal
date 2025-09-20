@@ -41,7 +41,7 @@ function getCreatedTimeMs(entry) {
 }
 
 function entryToText(entry) {
-  // Helpers to normalize display values
+  // Helpers to normalize display values - now properly handle null (N/A) values
   const toYesNo = (value) => {
     if (value === true || value === 'true') return 'Yes';
     if (value === false || value === 'false') return 'No';
@@ -114,28 +114,26 @@ function entryToText(entry) {
   }
   lines.push(`Day of the Week: ${dayOfWeek}`);
   
-  // Session Context - show ALL fields with their actual values
+  // Session Context - show all fields, including N/A values
   lines.push(`Daily High/Low Taken: ${toYesNo(entry.dailyHighLowTaken)}`);
   lines.push(`00:00 Open: ${toAligned(entry.aboveBelow0000)}`);
   lines.push(`8:30 Open: ${toAligned(entry.aboveBelow0830)}`);
   lines.push(`Macro: ${toYesNo(entry.macroRange)}`);
   
-  // Trade Environment - show ALL fields with their actual values
+  // Trade Environment - show all fields, including N/A values
   lines.push(`Judas Swing: ${toYesNo(entry.judasSwing)}`);
   lines.push(`Silver Bullet: ${toYesNo(entry.silverBullet)}`);
   lines.push(`Clear Manipulation: ${toYesNo(entry.manipulation)}`);
   lines.push(`SMT: ${toYesNo(entry.smt)}`);
   
-  // Handle POI as either array or string for backward compatibility
-  let poiText = 'N/A';
+  // Handle POI as either array or string for backward compatibility - only show if not empty
   if (entry.poi) {
-    if (Array.isArray(entry.poi)) {
-      poiText = entry.poi.length > 0 ? entry.poi.join(', ') : 'N/A';
-    } else {
-      poiText = entry.poi;
+    if (Array.isArray(entry.poi) && entry.poi.length > 0) {
+      lines.push(`POI: ${entry.poi.join(', ')}`);
+    } else if (typeof entry.poi === 'string' && entry.poi.trim() !== '') {
+      lines.push(`POI: ${entry.poi}`);
     }
   }
-  lines.push(`POI: ${poiText}`);
   lines.push(`Notes: ${entry.notes || 'N/A'}`);
   return lines.join("\n");
 }

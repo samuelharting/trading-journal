@@ -36,13 +36,42 @@ const entryTypeOptions = [
 
 
 function Toggle({ value, onChange, label }) {
+  // Handle three states: true, false, null (N/A)
+  const getNextState = (currentValue) => {
+    if (currentValue === true) return false;
+    if (currentValue === false) return null;
+    return true; // null -> true
+  };
+
+  const getDisplayText = (val) => {
+    if (val === true) return 'Yes';
+    if (val === false) return 'No';
+    return 'N/A';
+  };
+
+  const getToggleColor = (val) => {
+    if (val === true) return 'bg-green-500';
+    if (val === false) return 'bg-red-500';
+    return 'bg-neutral-600';
+  };
+
+  const getTogglePosition = (val) => {
+    if (val === true) return 'translate-x-4';
+    if (val === false) return 'translate-x-0';
+    return 'translate-x-2'; // N/A position (middle)
+  };
+
   return (
     <div className="flex items-center gap-2">
       <span className="text-blue-300 text-sm font-semibold">{label}</span>
-      <button type="button" onClick={() => onChange(!value)} className={`ml-2 w-8 h-5 rounded-full transition-colors duration-200 ${value ? 'bg-green-500' : 'bg-neutral-700'}`}> 
-        <span className={`block w-4 h-4 rounded-full bg-white shadow transform transition-transform duration-200 ${value ? 'translate-x-4' : ''}`}></span>
+      <button 
+        type="button" 
+        onClick={() => onChange(getNextState(value))} 
+        className={`ml-2 w-8 h-5 rounded-full transition-colors duration-200 ${getToggleColor(value)}`}
+      > 
+        <span className={`block w-4 h-4 rounded-full bg-white shadow transform transition-transform duration-200 ${getTogglePosition(value)}`}></span>
       </button>
-      <span className="text-xs text-blue-200 ml-1">{value ? 'Yes' : 'No'}</span>
+      <span className="text-xs text-blue-200 ml-1">{getDisplayText(value)}</span>
     </div>
   );
 }
@@ -96,18 +125,18 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
   const [entryType, setEntryType] = useState(forceEntryType || 'trade');
   const fileInputRef = useRef();
 
-  // Add new state for all toggles and POI
+  // Add new state for all toggles and POI - default to null (N/A)
   const [sessionContext, setSessionContext] = useState({
-    dailyHighLowTaken: false,
-    aboveBelow0000: false, // false = below, true = above
-    aboveBelow0830: false,
-    macroRange: false,
+    dailyHighLowTaken: null,
+    aboveBelow0000: null, // null = N/A, false = below, true = above
+    aboveBelow0830: null,
+    macroRange: null,
   });
   const [tradeEnv, setTradeEnv] = useState({
-    judasSwing: false,
-    silverBullet: false,
-    manipulation: false,
-    smt: false,
+    judasSwing: null,
+    silverBullet: null,
+    manipulation: null,
+    smt: null,
   });
   const [poi, setPoi] = useState([]);
 
@@ -240,8 +269,8 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
       year: entryYear,
       month: entryMonth,
       day: entryDay,
-      aboveBelow0000: sessionContext.aboveBelow0000 ? 'above' : 'below',
-      aboveBelow0830: sessionContext.aboveBelow0830 ? 'above' : 'below',
+      aboveBelow0000: sessionContext.aboveBelow0000 === null ? null : (sessionContext.aboveBelow0000 ? 'above' : 'below'),
+      aboveBelow0830: sessionContext.aboveBelow0830 === null ? null : (sessionContext.aboveBelow0830 ? 'above' : 'below'),
     });
     
     if (trimmedEntry && currentUser && selectedAccount) {
@@ -254,6 +283,20 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
       setForm(initialState);
       setScreenshots([]);
       setPoi([]);
+      // Reset toggle states to N/A
+      setSessionContext({
+        dailyHighLowTaken: null,
+        aboveBelow0000: null,
+        aboveBelow0830: null,
+        macroRange: null,
+      });
+      setTradeEnv({
+        judasSwing: null,
+        silverBullet: null,
+        manipulation: null,
+        smt: null,
+      });
+      setEconomicRelease("");
     }
     setSubmitting(false);
   };

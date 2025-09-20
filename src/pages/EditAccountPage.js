@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { UserContext } from "../App";
 import { db } from '../firebase';
-import { collection, getDocs, doc, updateDoc, addDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc } from 'firebase/firestore';
 import { ArrowLeftIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
 
 const EditAccountPage = () => {
@@ -24,36 +24,70 @@ const EditAccountPage = () => {
       const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
       setEntries(data);
       
-      // Calculate current balance using the same logic as SummaryPage
+      // Calculate current balance using the EXACT same logic as SummaryPage
       if (data.length > 0) {
-        const sorted = [...data].sort((a, b) => new Date(a.created) - new Date(b.created));
-        let balance = 0;
-        
-        sorted.forEach(e => {
-          if (e.isDeposit) {
-            // For deposits, use stored accountBalance directly (don't double-count)
-            if (e.accountBalance && !isNaN(Number(e.accountBalance))) {
-              balance = Number(e.accountBalance);
-            } else {
-              // Fallback: use deposit amount
-              balance += Number(e.pnl) || 0;
-            }
-          } else if (e.isPayout) {
-            // For payouts, use stored accountBalance directly (don't double-count)
-            if (e.accountBalance && !isNaN(Number(e.accountBalance))) {
-              balance = Number(e.accountBalance);
-            } else {
-              // Fallback: use payout amount (already negative)
-              balance += Number(e.pnl) || 0;
-            }
-          } else if (!e.isTapeReading) {
-            // For trades, add the P&L
-            balance += Number(e.pnl) || 0;
+        // Helper function to get entry date using year/month/day fields (consistent with other functions)
+        const getEntryDate = (entry) => {
+          if (entry.year && entry.month && entry.day) {
+            // Use the year/month/day fields that are stored as strings
+            const year = parseInt(entry.year, 10);
+            const month = parseInt(entry.month, 10) - 1; // Convert to 0-indexed
+            const day = parseInt(entry.day, 10);
+            return new Date(year, month, day);
           }
-          // Tape reading entries don't affect balance
+          // Fallback to created timestamp
+          if (entry.created) {
+            const timestamp = entry.created.split('-')[0]; // Remove random suffix
+            return new Date(timestamp);
+          }
+          return new Date();
+        };
+
+        // Sort entries chronologically - using created timestamp as primary sort (same as SummaryPage)
+        const sorted = [...data].sort((a, b) => {
+          const getTimestamp = (entry) => {
+            if (entry.created) {
+              const timestamp = entry.created.split('-')[0]; // Remove random suffix (same as SummaryPage)
+              return new Date(timestamp).getTime();
+            }
+            // Fallback to date fields
+            if (entry.year && entry.month && entry.day) {
+              const year = parseInt(entry.year, 10);
+              const month = parseInt(entry.month, 10) - 1;
+              const day = parseInt(entry.day, 10);
+              return new Date(year, month, day).getTime();
+            }
+            return 0;
+          };
+          return getTimestamp(a) - getTimestamp(b);
         });
-        setOriginalBalance(balance); // Store the original calculated balance
-        setCurrentBalance(balance.toFixed(2));
+        
+        let bal = 0;
+        
+        // Process entries in chronological order (same logic as SummaryPage)
+        sorted.forEach((e, index) => {
+          if (e.isDeposit) {
+            // For deposits, just add the pnl amount (don't use stored accountBalance as it might be wrong)
+            bal += Number(e.pnl) || 0;
+          } else if (e.isPayout) {
+            // For payouts, subtract the amount (pnl should already be negative)
+            bal += Number(e.pnl) || 0;
+          } else if (!e.isTapeReading && !e.isResetExcluded) {
+            // For trades, add the P&L to the previous balance
+            bal += Number(e.pnl) || 0;
+          }
+          // Tape reading entries and reset-excluded trades don't affect balance
+        });
+        
+        // Round to 2 decimal places to avoid floating point precision issues
+        const finalBalance = Math.round(bal * 100) / 100;
+        const formattedBalance = finalBalance.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        setOriginalBalance(finalBalance); // Store the original calculated balance
+        setCurrentBalance(formattedBalance);
+      } else {
+        // No entries found, balance remains 0.00 (same as SummaryPage)
+        setOriginalBalance(0);
+        setCurrentBalance("0.00");
       }
       setLoading(false);
     };
