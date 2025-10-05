@@ -1,12 +1,7 @@
 import React, { useMemo, useContext, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import CalendarBox from "../components/CalendarBox";
-import { motion } from "framer-motion";
 import { UserContext } from "../App";
-import { db } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import Spinner from '../components/MatrixLoader';
-import GlitchTitle from '../components/GlitchTitle';
 import { CalendarIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { getTradingPerformance } from '../statsUtils';
 
@@ -58,12 +53,23 @@ const MonthPage = () => {
       }
     });
     return data;
-  }, [entries, year, month, daysInMonth, selectedAccount]);
+  }, [entries, year, month, daysInMonth]);
 
   const calendarGrid = useMemo(() => {
     const firstDay = new Date(year, month - 1, 1).getDay();
     const grid = [];
-    let week = Array((firstDay + 6) % 7).fill(null);
+    // Convert from JavaScript Sunday-start (0-6) to Monday-start (0-6) format
+    // Sunday=0 -> 6, Monday=1 -> 0, Tuesday=2 -> 1, ..., Saturday=6 -> 5
+    const mondayStartOffset = firstDay === 0 ? 6 : firstDay - 1;
+    
+    // Debug logging
+    console.log(`📅 Calendar Debug - Year: ${year}, Month: ${month}`);
+    console.log(`📅 First day of month (getDay()): ${firstDay} (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][firstDay]})`);
+    console.log(`📅 Monday-start offset: ${mondayStartOffset}`);
+    console.log(`📅 Expected: Oct 1st should be in position ${mondayStartOffset} (${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][mondayStartOffset]})`);
+    console.log(`📅 Version: ${Date.now()} - Force refresh`);
+    
+    let week = Array(mondayStartOffset).fill(null);
     for (let d = 1; d <= daysInMonth; d++) {
       week.push(d);
       if (week.length === 7) {
@@ -72,8 +78,10 @@ const MonthPage = () => {
       }
     }
     if (week.length) grid.push(week);
+    
+    console.log(`📅 First week grid:`, grid[0]);
     return grid;
-  }, [year, month, daysInMonth, selectedAccount]);
+  }, [year, month, daysInMonth, dataRefreshTrigger]);
 
   // Helper to compute weekly PnL and trade counts for the month
   function getWeeklyPnls(entries, year, month, calendarGrid) {
@@ -193,7 +201,7 @@ const MonthPage = () => {
             <div className="flex-1 border-b border-white/10 ml-4" />
           </div>
           <div className="w-full">
-            <div className="grid grid-cols-7 mb-2">
+            <div className="grid grid-cols-8 gap-8 mb-2">
               {weekdays.map(w => (
                 <div key={w} className="text-center text-[#e5e5e5] font-bold pb-2 text-base tracking-wide">{w}</div>
               ))}

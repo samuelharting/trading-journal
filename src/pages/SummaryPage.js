@@ -15,6 +15,7 @@ import Spinner from '../components/MatrixLoader';
 
 import StatCard from '../components/StatCard';
 import CircleCard from '../components/CircleCard';
+import AnimatedNumber from '../components/AnimatedNumber';
 import { useNavigate } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, defs, linearGradient, stop } from 'recharts';
 import { getTradingPerformance } from '../statsUtils';
@@ -532,7 +533,30 @@ function getPercentageChanges(entries, currentBalance, selectedYear = 'all') {
   
   // For percentage calculations, we need the ORIGINAL invested capital
   // This should be total deposits (don't subtract payouts for percentage base)
-  const originalCapital = totalDeposits;
+  // However, if there are multiple deposits/payouts, we need to be more careful
+  let originalCapital = totalDeposits;
+  
+  // Safety check: If there are many deposits/payouts, warn the user
+  const depositCount = sortedEntries.filter(e => e.isDeposit).length;
+  const payoutCount = sortedEntries.filter(e => e.isPayout).length;
+  
+  // Handle different starting capital scenarios
+  if (totalDeposits === 0 && totalPayouts === 0) {
+    // Scenario 1: Brand new funded account (starting balance: $0)
+    originalCapital = 0;
+    console.log('🎯 SCENARIO: Brand new funded account (starting balance: $0)');
+  } else if (totalDeposits === 0 && totalPayouts !== 0) {
+    // Scenario 2: No deposits but payouts exist (manual balance edits)
+    originalCapital = Math.abs(totalPayouts); // Use absolute value of payouts as starting capital
+    console.warn('⚠️ FIXING: No deposits found but payouts exist. Using payout amount as starting capital.');
+    console.warn(`   Original Capital set to: ${originalCapital} (based on payout: ${totalPayouts})`);
+  }
+  
+  if (depositCount + payoutCount > 3) {
+    console.warn('⚠️ WARNING: Multiple deposits/payouts detected. This may affect percentage calculations.');
+    console.warn(`   Deposits: ${depositCount}, Payouts: ${payoutCount}`);
+    console.warn('   Consider using the "Reset Account" feature for cleaner calculations.');
+  }
   
   // Calculate total trading P&L (excluding deposits, payouts, and reset-excluded trades)
   const totalTradingPnl = sumPrecise(
@@ -542,7 +566,8 @@ function getPercentageChanges(entries, currentBalance, selectedYear = 'all') {
   );
   
   // Overall account performance (trading performance only based on original capital)
-  const overallPercentage = originalCapital > 0 ? (totalTradingPnl / originalCapital) * 100 : 0;
+  // For brand new accounts (starting with $0), show "New Account" instead of infinite%
+  const overallPercentage = originalCapital > 0 ? (totalTradingPnl / originalCapital) * 100 : (totalTradingPnl > 0 ? 999999 : 0);
   
   // For day/week/month calculations, we'll show overall performance since 
   // the user specifically mentioned the issue with period-based calculations
@@ -567,8 +592,11 @@ function getPercentageChanges(entries, currentBalance, selectedYear = 'all') {
   const startOfToday = new Date(currentYear, currentMonth - 1, currentDay, 0, 0, 0);
   const endOfToday = new Date(currentYear, currentMonth - 1, currentDay, 23, 59, 59);
   
+  // Fix: Use Monday-start weeks to match calendar
   const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
+  const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert to Monday-start
+  startOfWeek.setDate(now.getDate() - daysToMonday);
   startOfWeek.setHours(0, 0, 0, 0);
   
   const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
@@ -588,9 +616,13 @@ function getPercentageChanges(entries, currentBalance, selectedYear = 'all') {
   // Option 2: Show overall performance in all cards
   // I'll implement Option 1 as per user's request
   
-  const dayPercentage = todayTrades.length > 0 && originalCapital > 0 ? (dayPnl / originalCapital) * 100 : 0;
-  const weekPercentage = weekTrades.length > 0 && originalCapital > 0 ? (weekPnl / originalCapital) * 100 : 0;
-  const monthPercentage = monthTrades.length > 0 && originalCapital > 0 ? (monthPnl / originalCapital) * 100 : 0;
+  // For brand new accounts (starting with $0), show high percentage for profitable periods
+  const dayPercentage = todayTrades.length > 0 ? 
+    (originalCapital > 0 ? (dayPnl / originalCapital) * 100 : (dayPnl > 0 ? 999999 : 0)) : 0;
+  const weekPercentage = weekTrades.length > 0 ? 
+    (originalCapital > 0 ? (weekPnl / originalCapital) * 100 : (weekPnl > 0 ? 999999 : 0)) : 0;
+  const monthPercentage = monthTrades.length > 0 ? 
+    (originalCapital > 0 ? (monthPnl / originalCapital) * 100 : (monthPnl > 0 ? 999999 : 0)) : 0;
   
   const result = {
     day: { 
@@ -615,15 +647,39 @@ function getPercentageChanges(entries, currentBalance, selectedYear = 'all') {
     }
   };
   
-  console.log('📊 FIXED getPercentageChanges DEBUG:');
+  console.log('📊 COMPREHENSIVE getPercentageChanges DEBUG:');
+  console.log('  ===== ENTRY ANALYSIS =====');
+  console.log('  Total Entries:', sortedEntries.length);
+  console.log('  Deposits:', sortedEntries.filter(e => e.isDeposit).length);
+  console.log('  Payouts:', sortedEntries.filter(e => e.isPayout).length);
+  console.log('  Trades:', sortedEntries.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading && !e.isResetExcluded).length);
+  console.log('  Tape Readings:', sortedEntries.filter(e => e.isTapeReading).length);
+  console.log('  Reset Excluded:', sortedEntries.filter(e => e.isResetExcluded).length);
+  
+  console.log('  ===== CAPITAL CALCULATION =====');
   console.log('  Total Deposits:', totalDeposits);
   console.log('  Total Payouts:', totalPayouts);
   console.log('  Original Capital (for % calc):', originalCapital);
   console.log('  Total Trading P&L:', totalTradingPnl);
   console.log('  Overall Performance:', overallPercentage.toFixed(2) + '%');
+  
+  console.log('  ===== PERIOD ANALYSIS =====');
+  console.log('  Current Date:', now.toLocaleDateString());
+  console.log('  Today Range:', startOfToday.toLocaleDateString(), 'to', endOfToday.toLocaleDateString());
+  console.log('  Week Range (Monday-start):', startOfWeek.toLocaleDateString(), 'to', now.toLocaleDateString());
+  console.log('  Month Range:', startOfMonth.toLocaleDateString(), 'to', now.toLocaleDateString());
+  
   console.log('  Day - P&L:', dayPnl, 'Percentage:', dayPercentage.toFixed(2) + '% (', todayTrades.length, 'trades)');
   console.log('  Week - P&L:', weekPnl, 'Percentage:', weekPercentage.toFixed(2) + '% (', weekTrades.length, 'trades)');
   console.log('  Month - P&L:', monthPnl, 'Percentage:', monthPercentage.toFixed(2) + '% (', monthTrades.length, 'trades)');
+  
+  // Debug: Show recent trades
+  const recentTrades = sortedEntries.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading && !e.isResetExcluded).slice(-5);
+  console.log('  ===== RECENT TRADES (Last 5) =====');
+  recentTrades.forEach((trade, i) => {
+    const date = trade.year && trade.month && trade.day ? `${trade.year}-${trade.month}-${trade.day}` : trade.created;
+    console.log(`    ${i + 1}. ${date} - $${trade.pnl} (${trade.tickerTraded || 'Unknown'})`);
+  });
   
   return result;
 }
@@ -1131,10 +1187,15 @@ const SummaryPage = () => {
               {percentageChanges ? (
                 <>
                   <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.day.pnl > 0 ? 'text-[#10B981]' : percentageChanges.day.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.day.pnl > 0 ? '+' : ''}${percentageChanges.day.pnl.toFixed(2)}
+                    <AnimatedNumber 
+                      value={percentageChanges.day.pnl}
+                      prefix={percentageChanges.day.pnl > 0 ? '+$' : '$'}
+                      duration={1.5}
+                      delay={0}
+                    />
                   </div>
                   <div className={`text-sm font-semibold ${percentageChanges.day.percentage > 0 ? 'text-[#10B981]' : percentageChanges.day.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.day.percentage > 0 ? '+' : ''}{percentageChanges.day.percentage.toFixed(2)}%
+                    {percentageChanges.day.percentage >= 999999 ? 'New Account' : `${percentageChanges.day.percentage > 0 ? '+' : ''}${percentageChanges.day.percentage.toFixed(2)}%`}
                   </div>
                 </>
               ) : <div className="text-neutral-500 text-sm">No trades today</div>}
@@ -1152,10 +1213,15 @@ const SummaryPage = () => {
               {percentageChanges ? (
                 <>
                   <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.week.pnl > 0 ? 'text-[#10B981]' : percentageChanges.week.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.week.pnl > 0 ? '+' : ''}${percentageChanges.week.pnl.toFixed(2)}
+                    <AnimatedNumber 
+                      value={percentageChanges.week.pnl}
+                      prefix={percentageChanges.week.pnl > 0 ? '+$' : '$'}
+                      duration={1.5}
+                      delay={0}
+                    />
                   </div>
                   <div className={`text-sm font-semibold ${percentageChanges.week.percentage > 0 ? 'text-[#10B981]' : percentageChanges.week.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.week.percentage > 0 ? '+' : ''}{percentageChanges.week.percentage.toFixed(2)}%
+                    {percentageChanges.week.percentage >= 999999 ? 'New Account' : `${percentageChanges.week.percentage > 0 ? '+' : ''}${percentageChanges.week.percentage.toFixed(2)}%`}
                   </div>
                 </>
               ) : <div className="text-neutral-500 text-sm">No trades this week</div>}
@@ -1173,10 +1239,15 @@ const SummaryPage = () => {
               {percentageChanges ? (
                 <>
                   <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.month.pnl > 0 ? 'text-[#10B981]' : percentageChanges.month.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.month.pnl > 0 ? '+' : ''}${percentageChanges.month.pnl.toFixed(2)}
+                    <AnimatedNumber 
+                      value={percentageChanges.month.pnl}
+                      prefix={percentageChanges.month.pnl > 0 ? '+$' : '$'}
+                      duration={1.5}
+                      delay={0}
+                    />
                   </div>
                   <div className={`text-sm font-semibold ${percentageChanges.month.percentage > 0 ? 'text-[#10B981]' : percentageChanges.month.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.month.percentage > 0 ? '+' : ''}{percentageChanges.month.percentage.toFixed(2)}%
+                    {percentageChanges.month.percentage >= 999999 ? 'New Account' : `${percentageChanges.month.percentage > 0 ? '+' : ''}${percentageChanges.month.percentage.toFixed(2)}%`}
                   </div>
                   
                   {/* 20% Goal Progress Bar */}
@@ -1231,10 +1302,15 @@ const SummaryPage = () => {
               {percentageChanges ? (
                 <>
                   <div className={`text-3xl font-bold leading-tight tracking-tight ${percentageChanges.overall.pnl > 0 ? 'text-[#10B981]' : percentageChanges.overall.pnl < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.overall.pnl > 0 ? '+' : ''}${percentageChanges.overall.pnl.toFixed(2)}
+                    <AnimatedNumber 
+                      value={percentageChanges.overall.pnl}
+                      prefix={percentageChanges.overall.pnl > 0 ? '+$' : '$'}
+                      duration={1.5}
+                      delay={0}
+                    />
                   </div>
                   <div className={`text-sm font-semibold ${percentageChanges.overall.percentage > 0 ? 'text-[#10B981]' : percentageChanges.overall.percentage < 0 ? 'text-[#EF4444]' : 'text-neutral-300'}`}>
-                    {percentageChanges.overall.percentage > 0 ? '+' : ''}{percentageChanges.overall.percentage.toFixed(2)}%
+                    {percentageChanges.overall.percentage >= 999999 ? 'New Account' : `${percentageChanges.overall.percentage > 0 ? '+' : ''}${percentageChanges.overall.percentage.toFixed(2)}%`}
                   </div>
                 </>
               ) : (
@@ -1261,7 +1337,14 @@ const SummaryPage = () => {
               <div className="text-right">
                 <div className="text-sm font-light text-neutral-400 uppercase tracking-wider">Account Balance</div>
                 <div className="flex items-center justify-end gap-2">
-                  <div className="text-xl font-bold text-[#10B981]">{currentBalance}</div>
+                  <div className="text-xl font-bold text-[#10B981]">
+                    <AnimatedNumber 
+                      value={parseFloat(currentBalance.replace(/,/g, '')) || 0}
+                      prefix="$"
+                      duration={2}
+                      delay={0}
+                    />
+                  </div>
                   <button
                     onClick={() => navigate('/edit-account')}
                     className="p-1 text-neutral-400 hover:text-[#10B981] rounded-md hover:bg-white/5"

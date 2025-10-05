@@ -118,8 +118,16 @@ export function getTradingPerformance(entries, targetYear = null, targetMonth = 
       .map(e => Number(e.pnl) || 0) // Already negative
   );
   
-  // For percentage calculations, use original capital (total deposits only)
-  const originalCapital = totalDeposits;
+  // Handle different starting capital scenarios
+  let originalCapital = totalDeposits;
+  
+  if (totalDeposits === 0 && totalPayouts === 0) {
+    // Scenario 1: Brand new funded account (starting balance: $0)
+    originalCapital = 0;
+  } else if (totalDeposits === 0 && totalPayouts !== 0) {
+    // Scenario 2: No deposits but payouts exist (manual balance edits)
+    originalCapital = Math.abs(totalPayouts);
+  }
   
   // If specific year/month requested, filter trades to that period
   let tradesToAnalyze = sortedEntries.filter(e => !e.isDeposit && !e.isPayout && !e.isTapeReading && !e.isResetExcluded);
@@ -134,7 +142,8 @@ export function getTradingPerformance(entries, targetYear = null, targetMonth = 
   const tradingPnl = sumPrecise(tradesToAnalyze.map(e => Number(e.pnl) || 0));
   
   // Calculate performance percentage based on original capital
-  const performancePercentage = originalCapital > 0 ? (tradingPnl / originalCapital) * 100 : 0;
+  // For brand new accounts (starting with $0), show high percentage for profitable periods
+  const performancePercentage = originalCapital > 0 ? (tradingPnl / originalCapital) * 100 : (tradingPnl > 0 ? 999999 : 0);
   
   return {
     pnl: tradingPnl,

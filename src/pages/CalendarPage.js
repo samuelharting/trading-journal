@@ -156,7 +156,7 @@ const CalendarPage = () => {
                       goalData.percentage > 0 ? 'text-green-400' : 
                       goalData.percentage < 0 ? 'text-red-400' : 'text-gray-400'
                     }`}>
-                      ({goalData.percentage > 0 ? '+' : ''}{goalData.percentage.toFixed(1)}%)
+                      ({goalData.percentage >= 999999 ? 'New Account' : `${goalData.percentage > 0 ? '+' : ''}${goalData.percentage.toFixed(1)}%`})
                       {/* Debug: Raw value = {JSON.stringify(goalData.percentage)} */}
                     </div>
                     
