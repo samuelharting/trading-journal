@@ -27,7 +27,7 @@ const TradesPage = () => {
   const [selectedMonth, setSelectedMonth] = useState((new Date().getMonth() + 1).toString());
   const [filteredGroups, setFilteredGroups] = useState([]);
   const [showFilter, setShowFilter] = useState(false);
-  const [showAllTrades, setShowAllTrades] = useState(true);
+  const [showAllTrades, setShowAllTrades] = useState(false);
   
   const navigate = useNavigate();
 

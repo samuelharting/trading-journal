@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
-import { PlusIcon, TrashIcon, PencilIcon, PhotoIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import { PlusIcon, TrashIcon, PencilIcon, PhotoIcon, XMarkIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, ClockIcon, SwatchIcon } from '@heroicons/react/24/solid';
 import { BookOpenIcon } from '@heroicons/react/24/outline';
 import { UserContext } from '../App';
 import { storage, db } from '../firebase';
@@ -10,6 +10,19 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 function getNotebookKey(user) { return `notebookData-${user || 'default'}`; }
 function getSectionKey(user) { return `notebookSelectedSection-${user || 'default'}`; }
 function getPageKey(user) { return `notebookSelectedPage-${user || 'default'}`; }
+function getRecentKey(user) { return `notebookRecent-${user || 'default'}`; }
+
+// Color palette for sections
+const SECTION_COLORS = [
+  { name: 'Blue', value: '#3b82f6' },
+  { name: 'Green', value: '#10b981' },
+  { name: 'Red', value: '#ef4444' },
+  { name: 'Purple', value: '#a855f7' },
+  { name: 'Yellow', value: '#eab308' },
+  { name: 'Orange', value: '#f97316' },
+  { name: 'Pink', value: '#ec4899' },
+  { name: 'Gray', value: '#6b7280' },
+];
 
 function loadNotebook(user) {
   if (!user) {
@@ -83,6 +96,13 @@ export default function NotebookPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const editorRef = useRef();
   
+  // New feature states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [recentPages, setRecentPages] = useState([]);
+  const [recentCollapsed, setRecentCollapsed] = useState(false);
+  const [colorPickerOpen, setColorPickerOpen] = useState(null);
+  const [draggedPage, setDraggedPage] = useState(null);
+  
   // Sticky image states
   const [stickyImages, setStickyImages] = useState([]);
   const [showImageModal, setShowImageModal] = useState(false);
@@ -95,10 +115,22 @@ export default function NotebookPage() {
   // Load notebook data when user changes
   useEffect(() => {
     if (currentUser?.uid) {
-      const loadedSections = loadNotebook(currentUser.uid);
+      let loadedSections = loadNotebook(currentUser.uid);
+      // Ensure sections have collapsed and color properties (backward compatibility)
+      loadedSections = loadedSections.map(sec => ({
+        ...sec,
+        collapsed: sec.collapsed ?? false,
+        color: sec.color ?? '#3b82f6'
+      }));
+      
       const loadedSelectedSection = localStorage.getItem(getSectionKey(currentUser.uid));
       const loadedSelectedPage = localStorage.getItem(getPageKey(currentUser.uid));
       const localUpdatedAt = Number(localStorage.getItem(`${getNotebookKey(currentUser.uid)}-updatedAt`) || '0');
+      
+      // Load recent pages
+      const recentData = localStorage.getItem(getRecentKey(currentUser.uid));
+      const loadedRecent = recentData ? JSON.parse(recentData) : [];
+      setRecentPages(loadedRecent);
 
       setSections(loadedSections);
       setSelectedSection(loadedSelectedSection);
@@ -108,7 +140,8 @@ export default function NotebookPage() {
         sections: loadedSections,
         selectedSection: loadedSelectedSection,
         selectedPage: loadedSelectedPage,
-        localUpdatedAt
+        localUpdatedAt,
+        recentPages: loadedRecent
       });
 
       // Also load from Firestore and reconcile newest
@@ -191,10 +224,34 @@ export default function NotebookPage() {
     }
   }, [selectedSection, selectedPage, currentUser?.uid]);
 
+  // Track recent pages
+  useEffect(() => {
+    if (currentUser?.uid && selectedSection && selectedPage) {
+      const section = sections.find(s => s.id === selectedSection);
+      const page = section?.pages.find(p => p.id === selectedPage);
+      
+      if (section && page) {
+        setRecentPages(prev => {
+          // Remove if already exists
+          const filtered = prev.filter(r => !(r.sectionId === selectedSection && r.pageId === selectedPage));
+          // Add to front
+          const updated = [
+            { sectionId: selectedSection, pageId: selectedPage, sectionName: section.name, pageName: page.name, timestamp: Date.now() },
+            ...filtered
+          ].slice(0, 5); // Keep only last 5
+          
+          // Save to localStorage
+          localStorage.setItem(getRecentKey(currentUser.uid), JSON.stringify(updated));
+          return updated;
+        });
+      }
+    }
+  }, [selectedSection, selectedPage, currentUser?.uid, sections]);
+
   // Section helpers
   const addSection = () => {
     const id = Date.now().toString();
-    const newSection = { id, name: "Untitled Section", pages: [] };
+    const newSection = { id, name: "Untitled Section", pages: [], collapsed: false, color: '#3b82f6' };
     setSections(s => [...s, newSection]);
     setSelectedSection(id);
     setSelectedPage(null);
@@ -209,6 +266,13 @@ export default function NotebookPage() {
   };
   const renameSection = (id, name) => {
     setSections(s => s.map(sec => sec.id === id ? { ...sec, name } : sec));
+  };
+  const toggleSectionCollapse = (id) => {
+    setSections(s => s.map(sec => sec.id === id ? { ...sec, collapsed: !sec.collapsed } : sec));
+  };
+  const changeSectionColor = (id, color) => {
+    setSections(s => s.map(sec => sec.id === id ? { ...sec, color } : sec));
+    setColorPickerOpen(null);
   };
 
   // Page helpers
@@ -254,6 +318,48 @@ export default function NotebookPage() {
       
       return updatedSections;
     });
+  };
+
+  // Drag and drop helpers
+  const handleDragStart = (e, sectionId, pageId) => {
+    setDraggedPage({ sectionId, pageId });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+  
+  const handleDrop = (e, targetSectionId) => {
+    e.preventDefault();
+    if (!draggedPage || draggedPage.sectionId === targetSectionId) {
+      setDraggedPage(null);
+      return;
+    }
+    
+    // Find the page being moved
+    const sourceSection = sections.find(s => s.id === draggedPage.sectionId);
+    const pageToMove = sourceSection?.pages.find(p => p.id === draggedPage.pageId);
+    
+    if (!pageToMove) {
+      setDraggedPage(null);
+      return;
+    }
+    
+    // Remove from source and add to target
+    setSections(s => s.map(sec => {
+      if (sec.id === draggedPage.sectionId) {
+        // Remove from source
+        return { ...sec, pages: sec.pages.filter(p => p.id !== draggedPage.pageId) };
+      } else if (sec.id === targetSectionId) {
+        // Add to target
+        return { ...sec, pages: [...sec.pages, pageToMove] };
+      }
+      return sec;
+    }));
+    
+    setDraggedPage(null);
   };
 
   // Sticky image helpers
@@ -435,6 +541,22 @@ export default function NotebookPage() {
   const section = sections.find(s => s.id === selectedSection);
   const page = section?.pages.find(p => p.id === selectedPage);
 
+  // Search filter
+  const filteredSections = sections.map(sec => {
+    if (!searchQuery.trim()) return sec;
+    
+    const sectionNameMatch = sec.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const filteredPages = sec.pages.filter(p => 
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.content.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    
+    if (sectionNameMatch || filteredPages.length > 0) {
+      return { ...sec, pages: sectionNameMatch ? sec.pages : filteredPages, collapsed: false };
+    }
+    return null;
+  }).filter(Boolean);
+
   // Clear highlighted image when switching pages
   useEffect(() => {
     setHighlightedImageId(null);
@@ -453,19 +575,101 @@ export default function NotebookPage() {
           <BookOpenIcon className="w-7 h-7 text-blue-400" />
           <span className="text-2xl font-bold tracking-tight">Notebook</span>
         </div>
+        
+        {/* Search Bar */}
+        <div className="relative">
+          <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search notes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-8 py-2 bg-[#101014] border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+            >
+              <XMarkIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        
         <button
-          className="flex items-center gap-2 px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded text-white font-semibold mb-2 transition-colors duration-200"
+          className="flex items-center gap-2 px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded text-white font-semibold transition-colors duration-200"
           onClick={addSection}
         >
           <PlusIcon className="w-5 h-5" /> New Section
         </button>
+        
         <div className="flex-1 overflow-y-auto pr-1">
-          {sections.map(sec => (
-            <div key={sec.id} className={`mb-2 rounded-lg ${selectedSection === sec.id ? 'bg-blue-900/40' : ''}`}> 
+          {/* Recent Pages */}
+          {recentPages.length > 0 && !searchQuery && (
+            <div className="mb-4 rounded-lg bg-[#101014] border border-white/5">
+              <div 
+                className="flex items-center gap-2 px-2 py-2 cursor-pointer hover:bg-white/5 rounded-t-lg"
+                onClick={() => setRecentCollapsed(!recentCollapsed)}
+              >
+                {recentCollapsed ? (
+                  <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+                ) : (
+                  <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                )}
+                <ClockIcon className="w-4 h-4 text-gray-400" />
+                <span className="text-sm font-semibold text-gray-300">Recent</span>
+              </div>
+              {!recentCollapsed && (
+                <div className="px-2 pb-2">
+                  {recentPages.map((recent, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center px-2 py-1 text-sm cursor-pointer hover:bg-white/5 rounded"
+                      onClick={() => {
+                        setSelectedSection(recent.sectionId);
+                        setSelectedPage(recent.pageId);
+                      }}
+                    >
+                      <span className="text-gray-400 truncate">
+                        {recent.sectionName} › {recent.pageName}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Sections */}
+          {filteredSections.map(sec => (
+            <div 
+              key={sec.id} 
+              className={`mb-2 rounded-lg border-l-4 ${selectedSection === sec.id ? 'bg-opacity-20' : ''}`}
+              style={{ 
+                borderLeftColor: sec.color || '#3b82f6',
+                backgroundColor: selectedSection === sec.id ? `${sec.color}20` : 'transparent'
+              }}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, sec.id)}
+            > 
               <div className="flex items-center group px-2 py-1">
+                {/* Collapse/Expand Chevron */}
+                <button
+                  onClick={() => toggleSectionCollapse(sec.id)}
+                  className="p-1 hover:bg-white/10 rounded mr-1"
+                  title={sec.collapsed ? "Expand" : "Collapse"}
+                >
+                  {sec.collapsed ? (
+                    <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+                  ) : (
+                    <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                  )}
+                </button>
+                
                 {editingSection === sec.id ? (
                   <input
-                    className="bg-transparent border-b border-blue-400 text-lg font-semibold w-full outline-none"
+                    className="bg-transparent border-b text-lg font-semibold w-full outline-none"
+                    style={{ borderBottomColor: sec.color }}
                     value={sec.name}
                     autoFocus
                     onChange={e => renameSection(sec.id, e.target.value)}
@@ -474,24 +678,78 @@ export default function NotebookPage() {
                   />
                 ) : (
                   <span
-                    className="flex-1 text-lg font-semibold cursor-pointer hover:text-blue-300 transition-colors duration-200"
-                    onClick={() => { setSelectedSection(sec.id); if (sec.pages.length > 0) setSelectedPage(sec.pages[0].id); }}
+                    className="flex-1 text-lg font-semibold cursor-pointer hover:opacity-80 transition-opacity duration-200"
+                    style={{ color: sec.color }}
+                    onClick={() => { 
+                      setSelectedSection(sec.id); 
+                      if (sec.pages.length > 0 && !sec.collapsed) setSelectedPage(sec.pages[0].id); 
+                    }}
                     onDoubleClick={() => setEditingSection(sec.id)}
                   >
                     {sec.name}
                   </span>
                 )}
+                
+                {/* Color Picker */}
+                <div className="relative">
+                  <button 
+                    className="ml-1 p-1 hover:text-blue-400 relative" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setColorPickerOpen(colorPickerOpen === sec.id ? null : sec.id);
+                    }} 
+                    title="Change Color"
+                  >
+                    <SwatchIcon className="w-4 h-4" style={{ color: sec.color }} />
+                  </button>
+                  
+                  {/* Color Picker Dropdown */}
+                  {colorPickerOpen === sec.id && (
+                    <div 
+                      className="absolute right-0 top-8 z-50 bg-[#101014] border border-white/20 rounded-lg p-2 shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="grid grid-cols-4 gap-2">
+                        {SECTION_COLORS.map(color => (
+                          <button
+                            key={color.value}
+                            className="w-6 h-6 rounded hover:scale-110 transition-transform border-2 border-white/20"
+                            style={{ backgroundColor: color.value }}
+                            onClick={() => changeSectionColor(sec.id, color.value)}
+                            title={color.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
                 <button className="ml-1 p-1 hover:text-blue-400" onClick={() => setEditingSection(sec.id)} title="Rename Section"><PencilIcon className="w-4 h-4" /></button>
                 <button className="ml-1 p-1 hover:text-red-400" onClick={() => deleteSection(sec.id)} title="Delete Section"><TrashIcon className="w-4 h-4" /></button>
               </div>
+              
               {/* Pages */}
+              {!sec.collapsed && (
               <div className="pl-4">
                 {sec.pages.map(p => (
-                  <div key={p.id} className={`flex items-center group px-2 py-1 rounded cursor-pointer ${selectedPage === p.id ? 'bg-blue-800/40' : 'hover:bg-white/5'}`}
-                    onClick={() => { setSelectedSection(sec.id); setSelectedPage(p.id); }}>
+                  <div 
+                    key={p.id} 
+                    className={`flex items-center group px-2 py-1 rounded cursor-move ${
+                      selectedPage === p.id 
+                        ? 'bg-opacity-40' 
+                        : 'hover:bg-white/5'
+                    } ${draggedPage?.pageId === p.id ? 'opacity-50' : ''}`}
+                    style={{ 
+                      backgroundColor: selectedPage === p.id ? `${sec.color}40` : 'transparent'
+                    }}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, sec.id, p.id)}
+                    onClick={() => { setSelectedSection(sec.id); setSelectedPage(p.id); }}
+                  >
                     {editingPage === p.id ? (
                       <input
-                        className="bg-transparent border-b border-blue-400 text-base w-full outline-none"
+                        className="bg-transparent border-b text-base w-full outline-none"
+                        style={{ borderBottomColor: sec.color }}
                         value={p.name}
                         autoFocus
                         onChange={e => renamePage(sec.id, p.id, e.target.value)}
@@ -500,7 +758,7 @@ export default function NotebookPage() {
                       />
                     ) : (
                       <span 
-                        className="flex-1 text-base cursor-pointer hover:text-blue-200 transition-colors duration-200" 
+                        className="flex-1 text-base cursor-move hover:opacity-80 transition-opacity duration-200" 
                         onDoubleClick={() => setEditingPage(p.id)}
                       >
                         {p.name}
@@ -517,38 +775,39 @@ export default function NotebookPage() {
                   <PlusIcon className="w-4 h-4" /> New Page
                 </button>
               </div>
+              )}
             </div>
           ))}
         </div>
       </aside>
       {/* Editor */}
-      <main className="flex-1 flex flex-col items-center justify-center p-8">
+      <main className="flex-1 flex flex-col p-4">
         {section && page ? (
-          <div className="w-full max-w-7xl flex gap-8">
+          <div className="flex-1 flex gap-6 max-w-none">
             {/* Text Editor */}
-            <div className="flex-1 max-w-3xl flex flex-col gap-4">
-              <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
-                <PencilIcon className="w-6 h-6 text-blue-400" />
+            <div className="flex-1 flex flex-col gap-3">
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <PencilIcon className="w-5 h-5 text-blue-400" />
                 <input
-                  className="bg-transparent border-b border-blue-400 text-2xl font-bold w-full outline-none focus:border-blue-200 transition-colors duration-200"
+                  className="bg-transparent border-b border-blue-400 text-xl font-bold w-full outline-none focus:border-blue-200 transition-colors duration-200"
                   value={page.name}
                   onChange={e => renamePage(section.id, page.id, e.target.value)}
                   onClick={clearHighlight}
                 />
               </div>
-              <div className="relative">
-                            <textarea
-              ref={editorRef}
-              className="w-full min-h-[400px] bg-[#18181c] rounded-xl p-6 text-lg font-mono text-[#e5e5e5] focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300 shadow-xl resize-vertical"
-              value={page.content}
-              onChange={handleEditorInput}
-              onMouseUp={handleMouseUp}
-              onClick={(e) => { e.stopPropagation(); handleTextClick(e); }}
-              onKeyUp={handleTextClick}
-              onFocus={handleTextClick}
-              placeholder="Start typing your notes...\n- Bullet points supported with '-' or '*'"
-              spellCheck={false}
-            />
+              <div className="relative flex-1">
+                <textarea
+                  ref={editorRef}
+                  className="w-full h-full min-h-[600px] bg-[#18181c] rounded-lg p-4 text-base font-mono text-[#e5e5e5] focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300 resize-none"
+                  value={page.content}
+                  onChange={handleEditorInput}
+                  onMouseUp={handleMouseUp}
+                  onClick={(e) => { e.stopPropagation(); handleTextClick(e); }}
+                  onKeyUp={handleTextClick}
+                  onFocus={handleTextClick}
+                  placeholder="Start typing your notes...\n- Bullet points supported with '-' or '*'"
+                  spellCheck={false}
+                />
                 
                 {/* Upload Button - Right next to selection */}
                 {selectionPosition && (
@@ -576,8 +835,8 @@ export default function NotebookPage() {
             </div>
             
             {/* Sticky Notes Grid */}
-            <div className="w-64 bg-[#18181c] rounded-xl p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center gap-2 mb-3">
+            <div className="w-56 bg-[#18181c] rounded-lg p-3 flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2 mb-2">
                 <PhotoIcon className="w-4 h-4 text-blue-400" />
                 <span className="text-sm font-medium text-[#e5e5e5]">Sticky Notes</span>
                 <span className="text-xs text-gray-400">
@@ -585,98 +844,102 @@ export default function NotebookPage() {
                 </span>
               </div>
               
-              {page.stickyImages && page.stickyImages.length > 0 ? (
-                <div className="grid grid-cols-3 gap-2">
-                  {page.stickyImages.map((stickyImage, index) => {
-                    const isHighlighted = highlightedImageId === stickyImage.id;
-                    return (
-                      <div
-                        key={stickyImage.id}
-                        className="transition-all duration-300"
-                        data-sticky-id={stickyImage.id}
-                      >
-                        <button
-                          onClick={() => {
-                            setSelectedImage(stickyImage.imageUrl);
-                            setShowImageModal(true);
-                          }}
-                          className={`group w-full aspect-square rounded-lg shadow-md hover:shadow-xl transition-all duration-500 relative overflow-hidden ${
-                            isHighlighted 
-                              ? 'scale-[2] shadow-2xl z-20' 
-                              : 'hover:scale-110 hover:z-10'
-                          }`}
-                          title={`Image for: "${stickyImage.selectedText || 'Unknown text'}"`}
+              <div className="flex-1 overflow-y-auto">
+                {page.stickyImages && page.stickyImages.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {page.stickyImages.map((stickyImage, index) => {
+                      const isHighlighted = highlightedImageId === stickyImage.id;
+                      return (
+                        <div
+                          key={stickyImage.id}
+                          className="transition-all duration-300"
+                          data-sticky-id={stickyImage.id}
                         >
-                          {/* Loading State */}
-                          {loadingImages.has(stickyImage.id) && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-gray-800/80">
-                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
-                            </div>
-                          )}
-                          
-                          {/* Actual Image */}
-                          <img
-                            src={stickyImage.imageUrl}
-                            alt={`Sticky note for: ${stickyImage.selectedText}`}
-                            className="w-full h-full object-cover transition-all duration-300 group-hover:brightness-105"
-                            onLoadStart={() => {
-                              setLoadingImages(prev => new Set(prev).add(stickyImage.id));
+                          <button
+                            onClick={() => {
+                              setSelectedImage(stickyImage.imageUrl);
+                              setShowImageModal(true);
                             }}
-                            onError={(e) => {
-                              // Fallback to icon if image fails to load
-                              setLoadingImages(prev => {
-                                const newSet = new Set(prev);
-                                newSet.delete(stickyImage.id);
-                                return newSet;
-                              });
-                              e.target.style.display = 'none';
-                              e.target.parentElement.querySelector('.fallback-icon').style.display = 'flex';
-                            }}
-                            onLoad={(e) => {
-                              // Hide fallback icon if image loads successfully
-                              setLoadingImages(prev => {
-                                const newSet = new Set(prev);
-                                newSet.delete(stickyImage.id);
-                                return newSet;
-                              });
-                              e.target.parentElement.querySelector('.fallback-icon').style.display = 'none';
-                            }}
-                          />
-                          
-                          {/* Fallback Icon */}
-                          <div className="fallback-icon absolute inset-0 flex items-center justify-center bg-yellow-400" style={{ display: 'none' }}>
-                            <PhotoIcon className="w-6 h-6 text-yellow-800" />
-                          </div>
-                          
-                          {/* Text Overlay */}
-                          <div className="absolute bottom-0 left-0 right-0 text-white text-xs p-1 truncate backdrop-blur-sm bg-black/60 group-hover:bg-black/70 transition-all duration-300">
-                            {stickyImage.selectedText ? stickyImage.selectedText.substring(0, 15) + '...' : 'Image'}
-                          </div>
-
-                          {/* Delete Button inside the image button to keep positioning consistent */}
-                          <span
-                            onClick={(e) => { e.stopPropagation(); deleteStickyImage(selectedSection, selectedPage, stickyImage.id); }}
-                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-30"
-                            title="Delete sticky image"
+                            className={`group w-full aspect-square rounded-lg shadow-md hover:shadow-xl transition-all duration-500 relative overflow-hidden ${
+                              isHighlighted 
+                                ? 'scale-[1.5] shadow-2xl z-20' 
+                                : 'hover:scale-105 hover:z-10'
+                            }`}
+                            title={`Image for: "${stickyImage.selectedText || 'Unknown text'}"`}
                           >
-                            <XMarkIcon className="w-3 h-3 text-white" />
-                          </span>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <PhotoIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No notes yet</p>
-                  <p className="text-xs opacity-75">Highlight text and add sticky notes</p>
-                </div>
-              )}
+                            {/* Loading State */}
+                            {loadingImages.has(stickyImage.id) && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-gray-800/80">
+                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
+                              </div>
+                            )}
+                            
+                            {/* Actual Image */}
+                            <img
+                              src={stickyImage.imageUrl}
+                              alt={`Sticky note for: ${stickyImage.selectedText}`}
+                              className="w-full h-full object-cover transition-all duration-300 group-hover:brightness-105"
+                              onLoadStart={() => {
+                                setLoadingImages(prev => new Set(prev).add(stickyImage.id));
+                              }}
+                              onError={(e) => {
+                                // Fallback to icon if image fails to load
+                                setLoadingImages(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.delete(stickyImage.id);
+                                  return newSet;
+                                });
+                                e.target.style.display = 'none';
+                                e.target.parentElement.querySelector('.fallback-icon').style.display = 'flex';
+                              }}
+                              onLoad={(e) => {
+                                // Hide fallback icon if image loads successfully
+                                setLoadingImages(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.delete(stickyImage.id);
+                                  return newSet;
+                                });
+                                e.target.parentElement.querySelector('.fallback-icon').style.display = 'none';
+                              }}
+                            />
+                            
+                            {/* Fallback Icon */}
+                            <div className="fallback-icon absolute inset-0 flex items-center justify-center bg-yellow-400" style={{ display: 'none' }}>
+                              <PhotoIcon className="w-6 h-6 text-yellow-800" />
+                            </div>
+                            
+                            {/* Text Overlay */}
+                            <div className="absolute bottom-0 left-0 right-0 text-white text-xs p-1 truncate backdrop-blur-sm bg-black/60 group-hover:bg-black/70 transition-all duration-300">
+                              {stickyImage.selectedText ? stickyImage.selectedText.substring(0, 12) + '...' : 'Image'}
+                            </div>
+
+                            {/* Delete Button inside the image button to keep positioning consistent */}
+                            <span
+                              onClick={(e) => { e.stopPropagation(); deleteStickyImage(selectedSection, selectedPage, stickyImage.id); }}
+                              className="absolute top-1 right-1 w-4 h-4 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-30"
+                              title="Delete sticky image"
+                            >
+                              <XMarkIcon className="w-2 h-2 text-white" />
+                            </span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-500">
+                    <PhotoIcon className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                    <p className="text-xs">No notes yet</p>
+                    <p className="text-xs opacity-75">Highlight text and add sticky notes</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ) : (
-          <div className="text-neutral-400 text-lg opacity-70 select-none">Select or create a section and page to start taking notes.</div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-neutral-400 text-lg opacity-70 select-none">Select or create a section and page to start taking notes.</div>
+          </div>
         )}
         
         {/* Hidden file input */}

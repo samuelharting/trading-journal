@@ -78,6 +78,7 @@ function entryToText(entry) {
   lines.push(`Duration: ${entry.duration || 'N/A'}`);
   lines.push(`P&L: ${entry.pnl !== undefined && entry.pnl !== '' ? entry.pnl : 'N/A'}`);
   lines.push(`R:R: ${entry.rr !== undefined && entry.rr !== '' ? entry.rr : 'N/A'}`);
+  lines.push(`Trade Session: ${entry.tradeSession || 'N/A'}`);
   lines.push(`Economic Release: ${entry.economicRelease || 'N/A'}`);
   
   // Auto-calculate day of the week from the date

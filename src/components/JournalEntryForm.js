@@ -2,7 +2,14 @@ import React, { useState, useRef, useContext } from "react";
 import { motion } from "framer-motion";
 import {
   CameraIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ClockIcon,
+  ChartBarIcon,
+  PresentationChartLineIcon,
+  CurrencyDollarIcon,
+  CalendarIcon,
+  TagIcon,
+  XMarkIcon
 } from "@heroicons/react/24/outline";
 import { storage } from '../firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
@@ -10,6 +17,7 @@ import { UserContext } from '../App';
 
 const tickerOptions = ["MES", "MNQ", "BTC", "GL", "SL"];
 const poiOptions = ["REHs", "RELs", "ORG", "HTF PD Array", "HTF Liquidity", "EQ"];
+const sessionOptions = ["pre-market", "NY-AM", "NY-Lch", "NY-PM", "Asia", "London"];
 
 const initialState = {
   title: "",
@@ -22,6 +30,7 @@ const initialState = {
   entryTime: "",
   exitTime: "",
   tickerTraded: "MNQ",
+  tradeSession: "NY-AM",
 };
 
 
@@ -123,6 +132,8 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [entryType, setEntryType] = useState(forceEntryType || 'trade');
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const fileInputRef = useRef();
 
   // Add new state for all toggles and POI - default to null (N/A)
@@ -257,6 +268,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
       ...tradeEnv,
       poi: poi.length > 0 ? poi : [],
       economicRelease,
+      tradeSession: form.tradeSession,
       title: entryType === 'deposit' ? `$${Number(form.pnl).toFixed(2)} Deposit` : form.title, // Auto-generate title for deposits
       pnl: entryType === 'trade' ? Number(form.pnl) : entryType === 'payout' ? -Number(form.pnl) : entryType === 'deposit' ? Number(form.pnl) : 0,
       rr: entryType === 'trade' ? form.rr : '0',
@@ -476,27 +488,32 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
           <div className="flex flex-col h-full">
             {/* Screenshot Uploader - Dedicated Header Area */}
             {(entryType === 'trade' || entryType === 'tape') && (
-              <div className="bg-neutral-900/90 rounded-xl mx-4 mb-4 border border-neutral-700 overflow-hidden">
-                <div className="p-4 border-b border-neutral-700 bg-neutral-800/50">
+              <div className="bg-gradient-to-br from-neutral-900/95 to-neutral-800/95 rounded-2xl mx-4 mb-6 border border-neutral-600/50 overflow-hidden shadow-xl backdrop-blur-sm">
+                <div className="p-5 border-b border-neutral-600/30 bg-gradient-to-r from-neutral-800/80 to-neutral-700/80">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      <CameraIcon className="w-5 h-5 text-blue-400" />
-                      <span className="text-base font-bold text-[#e5e5e5]">Screenshots</span>
+                      <div className="p-2 bg-blue-500/20 rounded-lg">
+                        <CameraIcon className="w-5 h-5 text-blue-400" />
+                      </div>
+                      <span className="text-lg font-bold text-[#e5e5e5]">Screenshots</span>
                       {screenshots.length > 0 && (
-                        <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full font-bold">
+                        <span className="bg-gradient-to-r from-blue-600 to-blue-500 text-white text-xs px-3 py-1 rounded-full font-bold shadow-lg">
                           {screenshots.length}
                         </span>
                       )}
                     </div>
                     {/* Title field inline */}
-                    <div className="flex items-center gap-2 flex-1 max-w-md">
-                      <label className="text-xs font-semibold text-neutral-400 whitespace-nowrap">Title:</label>
+                    <div className="flex items-center gap-3 flex-1 max-w-md">
+                      <div className="p-2 bg-purple-500/20 rounded-lg">
+                        <TagIcon className="w-4 h-4 text-purple-400" />
+                      </div>
+                      <label className="text-sm font-semibold text-neutral-300 whitespace-nowrap">Title:</label>
                       <input 
                         name="title" 
                         type="text" 
                         value={form.title} 
                         onChange={handleChange} 
-                        className="flex-1 bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-blue-700 transition-all text-sm" 
+                        className="flex-1 bg-neutral-900/80 text-[#e5e5e5] p-3 rounded-lg border border-neutral-600/50 focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition-all text-sm font-medium" 
                         placeholder={entryType === 'tape' ? "Title for tape reading..." : "Title for trade..."} 
                       />
                     </div>
@@ -522,7 +539,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
                   {screenshots.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-center">
                       <div>
-                        <div className="text-neutral-400 text-sm mb-2">Click here to add images</div>
+                        <div className="text-neutral-400 text-sm mb-2 font-medium">Click here to add images</div>
                         <div className="text-neutral-500 text-xs">or drag & drop images</div>
                       </div>
                     </div>
@@ -534,7 +551,11 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
                             <img 
                               src={src} 
                               alt={`Screenshot ${idx + 1}`} 
-                              className="w-20 h-20 object-cover rounded-lg border-2 border-neutral-600 shadow-lg hover:border-blue-400 transition-colors cursor-pointer" 
+                              className="w-20 h-20 object-cover rounded-lg border-2 border-neutral-600 shadow-lg hover:border-blue-400 transition-all duration-300 cursor-pointer hover:scale-105" 
+                              onClick={() => {
+                                setSelectedImageIndex(idx);
+                                setShowImageViewer(true);
+                              }}
                             />
                             <button 
                               type="button" 
@@ -557,13 +578,16 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
             )}
 
             {/* Two-Column Layout for Trade Form */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4 pb-4 flex-1 min-h-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 px-6 pb-6 flex-1 min-h-0">
             {/* Left Column */}
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-6">
               {/* Session Context Card */}
-              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
-                <div className="flex items-center mb-3">
-                  <span className="text-base font-bold text-blue-300">Session Context</span>
+              <motion.div className="bg-gradient-to-br from-blue-900/30 to-indigo-900/30 rounded-2xl p-6 border border-blue-500/20 shadow-xl backdrop-blur-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-blue-500/20 rounded-lg">
+                    <ClockIcon className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <span className="text-lg font-bold text-blue-300">Session Context</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Toggle value={sessionContext.dailyHighLowTaken} onChange={v => setSessionContext(sc => ({ ...sc, dailyHighLowTaken: v }))} label="Daily high/low taken before trade?" />
@@ -593,9 +617,12 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
               </motion.div>
 
               {/* Trade Environment Card */}
-              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
-                <div className="flex items-center mb-3">
-                  <span className="text-base font-bold text-blue-300">Trade Environment</span>
+              <motion.div className="bg-gradient-to-br from-purple-900/30 to-violet-900/30 rounded-2xl p-6 border border-purple-500/20 shadow-xl backdrop-blur-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-purple-500/20 rounded-lg">
+                    <PresentationChartLineIcon className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <span className="text-lg font-bold text-purple-300">Trade Environment</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Toggle value={tradeEnv.judasSwing} onChange={v => setTradeEnv(te => ({ ...te, judasSwing: v }))} label="9:30 Judas swing?" />
@@ -606,9 +633,12 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
               </motion.div>
 
               {/* POI Card */}
-              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
-                <div className="flex items-center mb-3">
-                  <span className="text-base font-bold text-blue-300">POI</span>
+              <motion.div className="bg-gradient-to-br from-emerald-900/30 to-green-900/30 rounded-2xl p-6 border border-emerald-500/20 shadow-xl backdrop-blur-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-emerald-500/20 rounded-lg">
+                    <TagIcon className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <span className="text-lg font-bold text-emerald-300">POI</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {poiOptions.map(option => (
@@ -636,11 +666,37 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
             </div>
 
             {/* Right Column */}
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-6">
+              {/* Trade Session Card */}
+              <motion.div className="bg-gradient-to-br from-amber-900/30 to-orange-900/30 rounded-2xl p-6 border border-amber-500/20 shadow-xl backdrop-blur-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-amber-500/20 rounded-lg">
+                    <CalendarIcon className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <span className="text-lg font-bold text-amber-300">Trade Session</span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <label className="text-sm font-semibold text-amber-300">Session:</label>
+                  <select 
+                    name="tradeSession" 
+                    value={form.tradeSession} 
+                    onChange={handleChange} 
+                    className="w-full bg-neutral-900/80 text-[#e5e5e5] p-3 rounded-lg border border-neutral-600/50 focus:ring-2 focus:ring-amber-500 focus:border-amber-400 transition-all text-sm font-medium" 
+                  >
+                    {sessionOptions.map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+              </motion.div>
+
               {/* Core Trade Inputs - 3 Column Grid */}
-              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
-                <div className="flex items-center mb-3">
-                  <span className="text-base font-bold text-blue-300">Trade Details</span>
+              <motion.div className="bg-gradient-to-br from-slate-900/30 to-gray-900/30 rounded-2xl p-6 border border-slate-500/20 shadow-xl backdrop-blur-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-slate-500/20 rounded-lg">
+                    <ChartBarIcon className="w-5 h-5 text-slate-400" />
+                  </div>
+                  <span className="text-lg font-bold text-slate-300">Trade Details</span>
                 </div>
                 <div className="grid grid-cols-3 gap-4">
                   {/* Row 1: Ticker, P&L, R:R */}
@@ -652,7 +708,25 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-neutral-400 mb-1">P&L</label>
-                    <input name="pnl" type="number" step="0.01" value={form.pnl} onChange={handleChange} onWheel={(e) => e.target.blur()} className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-green-700 transition-all text-sm" placeholder="$" />
+                    <div className="relative">
+                      <CurrencyDollarIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                      <input 
+                        name="pnl" 
+                        type="number" 
+                        step="0.01" 
+                        value={form.pnl} 
+                        onChange={handleChange} 
+                        onWheel={(e) => e.target.blur()} 
+                        className={`w-full bg-neutral-900 text-[#e5e5e5] pl-10 pr-3 py-2 rounded-lg border focus:ring-2 transition-all text-sm font-medium ${
+                          form.pnl && Number(form.pnl) > 0 
+                            ? 'border-green-500/50 focus:ring-green-500 text-green-300' 
+                            : form.pnl && Number(form.pnl) < 0 
+                            ? 'border-red-500/50 focus:ring-red-500 text-red-300'
+                            : 'border-neutral-600/50 focus:ring-slate-500'
+                        }`} 
+                        placeholder="$" 
+                      />
+                    </div>
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-neutral-400 mb-1">R:R</label>
@@ -661,32 +735,40 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
                   {/* Row 2: Entry Time, Exit Time, Duration */}
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-neutral-400 mb-1">Entry Time</label>
-                    <input name="entryTime" type="text" value={form.entryTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all text-sm" placeholder="e.g. 09:30" />
+                    <div className="relative">
+                      <ClockIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                      <input name="entryTime" type="text" value={form.entryTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] pl-10 pr-3 py-2 rounded-lg border border-neutral-600/50 focus:ring-2 focus:ring-slate-500 focus:border-slate-400 transition-all text-sm font-medium" placeholder="e.g. 09:30" />
+                    </div>
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-neutral-400 mb-1">Exit Time</label>
-                    <input name="exitTime" type="text" value={form.exitTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] p-2 rounded-md border-none focus:ring-2 focus:ring-neutral-700 transition-all text-sm" placeholder="e.g. 10:15" />
+                    <div className="relative">
+                      <ClockIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                      <input name="exitTime" type="text" value={form.exitTime} onChange={handleChange} className="w-full bg-neutral-900 text-[#e5e5e5] pl-10 pr-3 py-2 rounded-lg border border-neutral-600/50 focus:ring-2 focus:ring-slate-500 focus:border-slate-400 transition-all text-sm font-medium" placeholder="e.g. 10:15" />
+                    </div>
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-neutral-400 mb-1">Duration</label>
-                    <input name="duration" type="text" value={form.duration} readOnly className="w-full bg-neutral-700 text-[#e5e5e5] p-2 rounded-md border-none text-sm" placeholder="Auto-calculated" />
+                    <input name="duration" type="text" value={form.duration} readOnly className="w-full bg-neutral-700/80 text-neutral-400 p-2 rounded-lg border border-neutral-600/30 text-sm font-medium" placeholder="Auto-calculated" />
                   </div>
                 </div>
               </motion.div>
 
               {/* Notes Panel */}
-              <motion.div className="bg-neutral-900/80 rounded-2xl p-4 border border-white/10 shadow-md">
-                <div className="flex items-center gap-3 mb-3">
-                  <DocumentTextIcon className="w-6 h-6 text-blue-300" />
-                  <div className="text-base font-bold text-[#e5e5e5]">{entryType === 'tape' ? 'Tape Reading' : 'Notes'}</div>
+              <motion.div className="bg-gradient-to-br from-teal-900/30 to-cyan-900/30 rounded-2xl p-6 border border-teal-500/20 shadow-xl backdrop-blur-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-teal-500/20 rounded-lg">
+                    <DocumentTextIcon className="w-5 h-5 text-teal-400" />
+                  </div>
+                  <div className="text-lg font-bold text-teal-300">{entryType === 'tape' ? 'Tape Reading Notes' : 'Trade Notes'}</div>
                 </div>
                 <div className="flex flex-col">
-                  <label className="text-sm font-semibold text-blue-400 mb-2">Notes</label>
+                  <label className="text-sm font-semibold text-teal-300 mb-3">Notes:</label>
                   <textarea 
                     name="notes" 
                     value={form.notes} 
                     onChange={handleChange} 
-                    className="w-full bg-neutral-900 text-[#e5e5e5] p-3 rounded-xl border-none focus:ring-2 focus:ring-blue-700 transition-all resize-none h-32" 
+                    className="w-full bg-neutral-900/80 text-[#e5e5e5] p-4 rounded-lg border border-neutral-600/50 focus:ring-2 focus:ring-teal-500 focus:border-teal-400 transition-all resize-none h-36 text-sm font-medium" 
                     placeholder={entryType === 'tape' ? "Enter your tape reading notes here..." : "Enter your trade notes here..."}
                   />
                 </div>
@@ -696,6 +778,54 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
           </div>
         )}
       </motion.div>
+
+      {/* Full-Screen Image Viewer */}
+      {showImageViewer && screenshots.length > 0 && (
+        <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-sm flex items-center justify-center">
+          <div className="relative w-full h-full flex items-center justify-center p-4">
+            {/* Close Button */}
+            <button
+              onClick={() => setShowImageViewer(false)}
+              className="absolute top-4 right-4 z-50 bg-red-600 hover:bg-red-700 text-white rounded-full p-3 hover:scale-110 transition-all duration-200 shadow-lg"
+            >
+              <XMarkIcon className="w-6 h-6" />
+            </button>
+
+            {/* Navigation Arrows */}
+            {screenshots.length > 1 && (
+              <>
+                <button
+                  onClick={() => setSelectedImageIndex(prev => prev > 0 ? prev - 1 : screenshots.length - 1)}
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 z-50 bg-neutral-800 hover:bg-neutral-700 text-white rounded-full p-3 hover:scale-110 transition-all duration-200 shadow-lg"
+                >
+                  ←
+                </button>
+                <button
+                  onClick={() => setSelectedImageIndex(prev => prev < screenshots.length - 1 ? prev + 1 : 0)}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 z-50 bg-neutral-800 hover:bg-neutral-700 text-white rounded-full p-3 hover:scale-110 transition-all duration-200 shadow-lg"
+                >
+                  →
+                </button>
+              </>
+            )}
+
+            {/* Image */}
+            <img
+              src={screenshots[selectedImageIndex]}
+              alt={`Screenshot ${selectedImageIndex + 1}`}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              onClick={() => setShowImageViewer(false)}
+            />
+
+            {/* Image Counter */}
+            {screenshots.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-neutral-800/90 text-white px-4 py-2 rounded-full text-sm font-medium">
+                {selectedImageIndex + 1} / {screenshots.length}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </form>
   );
 };
