@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
-import { PlusIcon, TrashIcon, PencilIcon, PhotoIcon, XMarkIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, ClockIcon, SwatchIcon } from '@heroicons/react/24/solid';
-import { BookOpenIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, TrashIcon, PencilIcon, PhotoIcon, XMarkIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, ClockIcon, SwatchIcon, FolderIcon } from '@heroicons/react/24/solid';
+import { BookOpenIcon, ChevronDoubleRightIcon, ChevronDoubleLeftIcon } from '@heroicons/react/24/outline';
 import { UserContext } from '../App';
 import { storage, db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -11,6 +11,7 @@ function getNotebookKey(user) { return `notebookData-${user || 'default'}`; }
 function getSectionKey(user) { return `notebookSelectedSection-${user || 'default'}`; }
 function getPageKey(user) { return `notebookSelectedPage-${user || 'default'}`; }
 function getRecentKey(user) { return `notebookRecent-${user || 'default'}`; }
+function getSidebarExpandedKey(user) { return `notebookSidebarExpanded-${user || 'default'}`; }
 
 // Color palette for sections
 const SECTION_COLORS = [
@@ -102,6 +103,10 @@ export default function NotebookPage() {
   const [recentCollapsed, setRecentCollapsed] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState(null);
   const [draggedPage, setDraggedPage] = useState(null);
+  const [dragOverPageIndex, setDragOverPageIndex] = useState(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [draggedSection, setDraggedSection] = useState(null);
   
   // Sticky image states
   const [stickyImages, setStickyImages] = useState([]);
@@ -120,7 +125,9 @@ export default function NotebookPage() {
       loadedSections = loadedSections.map(sec => ({
         ...sec,
         collapsed: sec.collapsed ?? false,
-        color: sec.color ?? '#3b82f6'
+        color: sec.color ?? '#3b82f6',
+        isFolder: sec.isFolder ?? false,
+        parentId: sec.parentId ?? null
       }));
       
       const loadedSelectedSection = localStorage.getItem(getSectionKey(currentUser.uid));
@@ -131,6 +138,10 @@ export default function NotebookPage() {
       const recentData = localStorage.getItem(getRecentKey(currentUser.uid));
       const loadedRecent = recentData ? JSON.parse(recentData) : [];
       setRecentPages(loadedRecent);
+      
+      // Load sidebar expanded state
+      const loadedSidebarExpanded = localStorage.getItem(getSidebarExpandedKey(currentUser.uid));
+      setSidebarExpanded(loadedSidebarExpanded === 'true');
 
       setSections(loadedSections);
       setSelectedSection(loadedSelectedSection);
@@ -151,8 +162,17 @@ export default function NotebookPage() {
           const snapshot = await getDoc(userDocRef);
           if (snapshot.exists()) {
             const remote = snapshot.data();
-            const remoteSections = Array.isArray(remote?.sections) ? remote.sections : [];
+            let remoteSections = Array.isArray(remote?.sections) ? remote.sections : [];
             const remoteUpdatedAt = Number(remote?.updatedAt || 0);
+            
+            // Apply backward compatibility to remote data
+            remoteSections = remoteSections.map(sec => ({
+              ...sec,
+              collapsed: sec.collapsed ?? false,
+              color: sec.color ?? '#3b82f6',
+              isFolder: sec.isFolder ?? false,
+              parentId: sec.parentId ?? null
+            }));
 
             if (remoteUpdatedAt > localUpdatedAt) {
               console.log('[NOTEBOOK] Using newer Firestore data');
@@ -251,10 +271,24 @@ export default function NotebookPage() {
   // Section helpers
   const addSection = () => {
     const id = Date.now().toString();
-    const newSection = { id, name: "Untitled Section", pages: [], collapsed: false, color: '#3b82f6' };
+    const newSection = { id, name: "Untitled Section", pages: [], collapsed: false, color: '#3b82f6', isFolder: false, parentId: null };
     setSections(s => [...s, newSection]);
     setSelectedSection(id);
     setSelectedPage(null);
+    setEditingSection(id);
+  };
+  const addFolder = () => {
+    const id = Date.now().toString();
+    const newFolder = { 
+      id, 
+      name: "Untitled Folder", 
+      pages: [], 
+      collapsed: false, 
+      color: '#3b82f6',
+      isFolder: true,
+      parentId: null
+    };
+    setSections(s => [...s, newFolder]);
     setEditingSection(id);
   };
   const deleteSection = (id) => {
@@ -321,14 +355,72 @@ export default function NotebookPage() {
   };
 
   // Drag and drop helpers
-  const handleDragStart = (e, sectionId, pageId) => {
-    setDraggedPage({ sectionId, pageId });
+  const handleDragStart = (e, sectionId, pageId, pageIndex) => {
+    setDraggedPage({ sectionId, pageId, pageIndex });
     e.dataTransfer.effectAllowed = 'move';
   };
   
   const handleDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+  };
+  
+  const handlePageDragOver = (e, sectionId, pageIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverPageIndex({ sectionId, pageIndex });
+    e.dataTransfer.dropEffect = 'move';
+  };
+  
+  const handlePageDrop = (e, targetSectionId, targetPageIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverPageIndex(null);
+    
+    if (!draggedPage) return;
+    
+    const sourceSection = sections.find(s => s.id === draggedPage.sectionId);
+    const pageToMove = sourceSection?.pages[draggedPage.pageIndex];
+    
+    if (!pageToMove) return;
+    
+    if (draggedPage.sectionId === targetSectionId) {
+      // REORDER within same section
+      setSections(s => s.map(sec => {
+        if (sec.id === targetSectionId) {
+          const newPages = [...sec.pages];
+          
+          // Handle the case where we're moving within the same array
+          if (draggedPage.pageIndex < targetPageIndex) {
+            // Moving down: target index needs to be adjusted because we removed an item before it
+            const adjustedTargetIndex = targetPageIndex - 1;
+            newPages.splice(draggedPage.pageIndex, 1); // remove from old position
+            newPages.splice(adjustedTargetIndex, 0, pageToMove); // insert at new position
+          } else {
+            // Moving up: target index stays the same
+            newPages.splice(draggedPage.pageIndex, 1); // remove from old position
+            newPages.splice(targetPageIndex, 0, pageToMove); // insert at new position
+          }
+          
+          return { ...sec, pages: newPages };
+        }
+        return sec;
+      }));
+    } else {
+      // MOVE to different section (existing behavior)
+      setSections(s => s.map(sec => {
+        if (sec.id === draggedPage.sectionId) {
+          return { ...sec, pages: sec.pages.filter((p, i) => i !== draggedPage.pageIndex) };
+        } else if (sec.id === targetSectionId) {
+          const newPages = [...sec.pages];
+          newPages.splice(targetPageIndex, 0, pageToMove);
+          return { ...sec, pages: newPages };
+        }
+        return sec;
+      }));
+    }
+    
+    setDraggedPage(null);
   };
   
   const handleDrop = (e, targetSectionId) => {
@@ -360,6 +452,42 @@ export default function NotebookPage() {
     }));
     
     setDraggedPage(null);
+  };
+
+  const handleSectionDragStart = (e, sectionId) => {
+    setDraggedSection(sectionId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleSectionDragOver = (e, folderId) => {
+    // Only handle section drags, ignore page drags
+    if (draggedPage) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleSectionDrop = (e, folderId) => {
+    // Only handle section drags, ignore page drags
+    if (draggedPage) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    if (!draggedSection || draggedSection === folderId) {
+      setDraggedSection(null);
+      return;
+    }
+    
+    // Move section into folder or out of folder
+    setSections(s => s.map(sec => {
+      if (sec.id === draggedSection) {
+        return { ...sec, parentId: folderId || null };
+      }
+      return sec;
+    }));
+    
+    setDraggedSection(null);
   };
 
   // Sticky image helpers
@@ -557,6 +685,11 @@ export default function NotebookPage() {
     return null;
   }).filter(Boolean);
 
+  // Hierarchy organization
+  const topLevelItems = filteredSections.filter(s => !s.parentId);
+  const getSectionsByParent = (parentId) => 
+    filteredSections.filter(s => s.parentId === parentId);
+
   // Clear highlighted image when switching pages
   useEffect(() => {
     setHighlightedImageId(null);
@@ -570,10 +703,26 @@ export default function NotebookPage() {
   return (
     <div className="flex w-full min-h-screen bg-[#101014] text-[#e5e5e5]" onClick={clearHighlight}>
       {/* Sidebar */}
-      <aside className="w-80 min-w-[16rem] max-w-xs bg-[#18181c] border-r border-white/5 flex flex-col p-4 gap-4" onClick={(e) => e.stopPropagation()}>
+      <aside className={`${sidebarExpanded ? 'w-[900px]' : 'w-80'} min-w-[16rem] bg-[#18181c] border-r border-white/5 flex flex-col p-4 gap-4 transition-all duration-300 ease-in-out`} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-2">
           <BookOpenIcon className="w-7 h-7 text-blue-400" />
           <span className="text-2xl font-bold tracking-tight">Notebook</span>
+          <button
+            onClick={() => {
+              setSidebarExpanded(!sidebarExpanded);
+              if (currentUser?.uid) {
+                localStorage.setItem(getSidebarExpandedKey(currentUser.uid), String(!sidebarExpanded));
+              }
+            }}
+            className="ml-auto p-2 hover:bg-white/10 rounded transition-colors"
+            title={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+          >
+            {sidebarExpanded ? (
+              <ChevronDoubleLeftIcon className="w-5 h-5" />
+            ) : (
+              <ChevronDoubleRightIcon className="w-5 h-5" />
+            )}
+          </button>
         </div>
         
         {/* Search Bar */}
@@ -596,14 +745,32 @@ export default function NotebookPage() {
           )}
         </div>
         
-        <button
-          className="flex items-center gap-2 px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded text-white font-semibold transition-colors duration-200"
-          onClick={addSection}
-        >
-          <PlusIcon className="w-5 h-5" /> New Section
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowAddMenu(!showAddMenu)}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded text-white font-semibold transition-colors duration-200 w-full"
+          >
+            <PlusIcon className="w-5 h-5" /> Add New
+          </button>
+          {showAddMenu && (
+            <div className="absolute top-full mt-1 w-full bg-[#101014] border border-white/20 rounded-lg shadow-xl z-50">
+              <button
+                onClick={() => { addSection(); setShowAddMenu(false); }}
+                className="w-full px-3 py-2 hover:bg-white/10 text-left rounded-t-lg"
+              >
+                New Section
+              </button>
+              <button
+                onClick={() => { addFolder(); setShowAddMenu(false); }}
+                className="w-full px-3 py-2 hover:bg-white/10 text-left rounded-b-lg"
+              >
+                New Folder
+              </button>
+            </div>
+          )}
+        </div>
         
-        <div className="flex-1 overflow-y-auto pr-1">
+        <div className={`flex-1 overflow-y-auto pr-1 ${sidebarExpanded ? 'grid grid-cols-3 gap-2' : 'flex flex-col'}`}>
           {/* Recent Pages */}
           {recentPages.length > 0 && !searchQuery && (
             <div className="mb-4 rounded-lg bg-[#101014] border border-white/5">
@@ -640,53 +807,318 @@ export default function NotebookPage() {
             </div>
           )}
           
+          {/* Root Drop Zone for moving sections out of folders */}
+          {draggedSection && !draggedPage && (
+            <div
+              className="mb-2 p-4 border-2 border-dashed border-blue-400 rounded-lg bg-blue-400/10 text-center text-blue-300"
+              onDragOver={(e) => handleSectionDragOver(e, null)}
+              onDrop={(e) => handleSectionDrop(e, null)}
+            >
+              Drop here to move section to root level
+            </div>
+          )}
+          
           {/* Sections */}
-          {filteredSections.map(sec => (
-            <div 
-              key={sec.id} 
-              className={`mb-2 rounded-lg border-l-4 ${selectedSection === sec.id ? 'bg-opacity-20' : ''}`}
-              style={{ 
-                borderLeftColor: sec.color || '#3b82f6',
-                backgroundColor: selectedSection === sec.id ? `${sec.color}20` : 'transparent'
-              }}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, sec.id)}
-            > 
+          {topLevelItems.map(item => (
+            <React.Fragment key={item.id}>
+              {item.isFolder ? (
+                /* FOLDER RENDERING */
+                <div 
+                  className={`mb-2 rounded-lg border-l-4 ${selectedSection === item.id ? 'bg-opacity-20' : ''} ${draggedSection ? 'border-2 border-dashed border-blue-400' : ''}`}
+                  style={{ 
+                    borderLeftColor: item.color || '#3b82f6',
+                    backgroundColor: selectedSection === item.id ? `${item.color}20` : 'transparent'
+                  }}
+                  onDragOver={(e) => handleSectionDragOver(e, item.id)}
+                  onDrop={(e) => handleSectionDrop(e, item.id)}
+                >
+                  <div className="flex items-center group px-2 py-1">
+                    {/* Collapse/Expand Chevron */}
+                    <button
+                      onClick={() => toggleSectionCollapse(item.id)}
+                      className="p-1 hover:bg-white/10 rounded mr-1"
+                      title={item.collapsed ? "Expand" : "Collapse"}
+                    >
+                      {item.collapsed ? (
+                        <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
+                    
+                    {/* Folder Icon */}
+                    <FolderIcon className="w-5 h-5 mr-2" style={{ color: item.color }} />
+                    
+                    {editingSection === item.id ? (
+                      <input
+                        className="bg-transparent border-b text-lg font-semibold w-full outline-none"
+                        style={{ borderBottomColor: item.color }}
+                        value={item.name}
+                        autoFocus
+                        onChange={e => renameSection(item.id, e.target.value)}
+                        onBlur={() => setEditingSection(null)}
+                        onKeyDown={e => { if (e.key === 'Enter') setEditingSection(null); }}
+                      />
+                    ) : (
+                      <span
+                        className="flex-1 text-lg font-semibold cursor-pointer hover:opacity-80 transition-opacity duration-200"
+                        style={{ color: item.color }}
+                        onClick={() => setSelectedSection(item.id)}
+                        onDoubleClick={() => setEditingSection(item.id)}
+                      >
+                        {item.name}
+                      </span>
+                    )}
+                    
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                      <button
+                        className="p-1 hover:text-blue-400"
+                        onClick={e => { e.stopPropagation(); setColorPickerOpen(colorPickerOpen === item.id ? null : item.id); }}
+                        title="Change Color"
+                      >
+                        <SwatchIcon className="w-4 h-4" />
+                      </button>
+                      <button className="p-1 hover:text-blue-400" onClick={e => { e.stopPropagation(); setEditingSection(item.id); }} title="Rename Folder"><PencilIcon className="w-4 h-4" /></button>
+                      <button className="p-1 hover:text-red-400" onClick={e => { e.stopPropagation(); deleteSection(item.id); }} title="Delete Folder"><TrashIcon className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                  
+                  {/* Color Picker */}
+                  {colorPickerOpen === item.id && (
+                    <div className="px-2 py-2 bg-[#101014] border-t border-white/10">
+                      <div className="flex gap-2">
+                        {SECTION_COLORS.map(color => (
+                          <button
+                            key={color.value}
+                            className="w-6 h-6 rounded border-2 hover:scale-110 transition-transform"
+                            style={{ backgroundColor: color.value, borderColor: item.color === color.value ? 'white' : 'transparent' }}
+                            onClick={() => changeSectionColor(item.id, color.value)}
+                            title={color.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Folder Contents */}
+                  {!item.collapsed && (
+                    <div className="pl-6">
+                      {getSectionsByParent(item.id).map(childSection => (
+                        <div 
+                          key={childSection.id} 
+                          className={`mb-2 rounded-lg border-l-4 ${selectedSection === childSection.id ? 'bg-opacity-20' : ''} ${draggedSection === childSection.id ? 'opacity-50' : ''}`}
+                          style={{ 
+                            borderLeftColor: childSection.color || '#3b82f6',
+                            backgroundColor: selectedSection === childSection.id ? `${childSection.color}20` : 'transparent'
+                          }}
+                          draggable
+                          onDragStart={(e) => handleSectionDragStart(e, childSection.id)}
+                          onDragOver={handleDragOver}
+                          onDrop={(e) => handleDrop(e, childSection.id)}
+                        >
+                          <div className="flex items-center group px-2 py-1">
+                            {/* Collapse/Expand Chevron */}
+                            <button
+                              onClick={() => toggleSectionCollapse(childSection.id)}
+                              className="p-1 hover:bg-white/10 rounded mr-1"
+                              title={childSection.collapsed ? "Expand" : "Collapse"}
+                            >
+                              {childSection.collapsed ? (
+                                <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+                              ) : (
+                                <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                              )}
+                            </button>
+                            
+                            {editingSection === childSection.id ? (
+                              <input
+                                className="bg-transparent border-b text-lg font-semibold w-full outline-none"
+                                style={{ borderBottomColor: childSection.color }}
+                                value={childSection.name}
+                                autoFocus
+                                onChange={e => renameSection(childSection.id, e.target.value)}
+                                onBlur={() => setEditingSection(null)}
+                                onKeyDown={e => { if (e.key === 'Enter') setEditingSection(null); }}
+                              />
+                            ) : (
+                              <span
+                                className="flex-1 text-lg font-semibold cursor-pointer hover:opacity-80 transition-opacity duration-200"
+                                style={{ color: childSection.color }}
+                                onClick={() => { 
+                                  setSelectedSection(childSection.id); 
+                                  if (childSection.pages.length > 0 && !childSection.collapsed) setSelectedPage(childSection.pages[0].id); 
+                                }}
+                                onDoubleClick={() => setEditingSection(childSection.id)}
+                              >
+                                {childSection.name}
+                              </span>
+                            )}
+                            
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              <button
+                                className="p-1 hover:text-blue-400"
+                                onClick={e => { e.stopPropagation(); setColorPickerOpen(colorPickerOpen === childSection.id ? null : childSection.id); }}
+                                title="Change Color"
+                              >
+                                <SwatchIcon className="w-4 h-4" />
+                              </button>
+                              <button className="p-1 hover:text-blue-400" onClick={e => { e.stopPropagation(); setEditingSection(childSection.id); }} title="Rename Section"><PencilIcon className="w-4 h-4" /></button>
+                              <button className="p-1 hover:text-red-400" onClick={e => { e.stopPropagation(); deleteSection(childSection.id); }} title="Delete Section"><TrashIcon className="w-4 h-4" /></button>
+                              <button 
+                                className="p-1 hover:text-orange-400" 
+                                onClick={e => { e.stopPropagation(); setSections(s => s.map(sec => sec.id === childSection.id ? { ...sec, parentId: null } : sec)); }} 
+                                title="Remove from folder"
+                              >
+                                <XMarkIcon className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Color Picker */}
+                          {colorPickerOpen === childSection.id && (
+                            <div className="px-2 py-2 bg-[#101014] border-t border-white/10">
+                              <div className="flex gap-2">
+                                {SECTION_COLORS.map(color => (
+                                  <button
+                                    key={color.value}
+                                    className="w-6 h-6 rounded border-2 hover:scale-110 transition-transform"
+                                    style={{ backgroundColor: color.value, borderColor: childSection.color === color.value ? 'white' : 'transparent' }}
+                                    onClick={() => changeSectionColor(childSection.id, color.value)}
+                                    title={color.name}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Pages */}
+                          {!childSection.collapsed && (
+                            <div className="pl-4">
+                              {childSection.pages.map((p, pageIndex) => (
+                                <React.Fragment key={p.id}>
+                                  {/* Drop indicator BEFORE page */}
+                                  <div
+                                    className={`h-1 transition-all ${
+                                      dragOverPageIndex?.sectionId === childSection.id && dragOverPageIndex?.pageIndex === pageIndex
+                                        ? 'bg-blue-500 h-1 my-0.5 rounded'
+                                        : 'h-0'
+                                    }`}
+                                    onDragOver={(e) => handlePageDragOver(e, childSection.id, pageIndex)}
+                                    onDrop={(e) => handlePageDrop(e, childSection.id, pageIndex)}
+                                  />
+                                  
+                                  <div 
+                                    className={`flex items-center group px-2 py-1 rounded cursor-move ${
+                                      selectedPage === p.id 
+                                        ? 'bg-opacity-40' 
+                                        : 'hover:bg-white/5'
+                                    } ${draggedPage?.pageId === p.id ? 'opacity-50' : ''}`}
+                                    style={{ 
+                                      backgroundColor: selectedPage === p.id ? `${childSection.color}40` : 'transparent'
+                                    }}
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, childSection.id, p.id, pageIndex)}
+                                    onClick={() => { setSelectedSection(childSection.id); setSelectedPage(p.id); }}
+                                  >
+                                    {editingPage === p.id ? (
+                                      <input
+                                        className="bg-transparent border-b text-base w-full outline-none"
+                                        style={{ borderBottomColor: childSection.color }}
+                                        value={p.name}
+                                        autoFocus
+                                        onChange={e => renamePage(childSection.id, p.id, e.target.value)}
+                                        onBlur={() => setEditingPage(null)}
+                                        onKeyDown={e => { if (e.key === 'Enter') setEditingPage(null); }}
+                                      />
+                                    ) : (
+                                      <span 
+                                        className="flex-1 text-base cursor-move hover:opacity-80 transition-opacity duration-200" 
+                                        onDoubleClick={() => setEditingPage(p.id)}
+                                      >
+                                        {p.name}
+                                      </span>
+                                    )}
+                                    <button className="ml-1 p-1 hover:text-blue-400" onClick={e => { e.stopPropagation(); setEditingPage(p.id); }} title="Rename Page"><PencilIcon className="w-4 h-4" /></button>
+                                    <button className="ml-1 p-1 hover:text-red-400" onClick={e => { e.stopPropagation(); deletePage(childSection.id, p.id); }} title="Delete Page"><TrashIcon className="w-4 h-4" /></button>
+                                  </div>
+                                  
+                                  {/* Drop indicator AFTER last page */}
+                                  {pageIndex === childSection.pages.length - 1 && (
+                                    <div
+                                      className={`h-1 transition-all ${
+                                        dragOverPageIndex?.sectionId === childSection.id && dragOverPageIndex?.pageIndex === pageIndex + 1
+                                          ? 'bg-blue-500 h-1 my-0.5 rounded'
+                                          : 'h-0'
+                                      }`}
+                                      onDragOver={(e) => handlePageDragOver(e, childSection.id, pageIndex + 1)}
+                                      onDrop={(e) => handlePageDrop(e, childSection.id, pageIndex + 1)}
+                                    />
+                                  )}
+                                </React.Fragment>
+                              ))}
+                              <button
+                                className="flex items-center gap-1 text-xs text-blue-300 hover:text-blue-100 transition-colors duration-200 mt-1 mb-2"
+                                onClick={() => addPage(childSection.id)}
+                              >
+                                <PlusIcon className="w-4 h-4" /> New Page
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* REGULAR SECTION RENDERING */
+                <div 
+                  className={`mb-2 rounded-lg border-l-4 ${selectedSection === item.id ? 'bg-opacity-20' : ''} ${draggedSection === item.id ? 'opacity-50' : ''}`}
+                  style={{ 
+                    borderLeftColor: item.color || '#3b82f6',
+                    backgroundColor: selectedSection === item.id ? `${item.color}20` : 'transparent'
+                  }}
+                  draggable
+                  onDragStart={(e) => handleSectionDragStart(e, item.id)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, item.id)}
+                > 
               <div className="flex items-center group px-2 py-1">
                 {/* Collapse/Expand Chevron */}
                 <button
-                  onClick={() => toggleSectionCollapse(sec.id)}
+                  onClick={() => toggleSectionCollapse(item.id)}
                   className="p-1 hover:bg-white/10 rounded mr-1"
-                  title={sec.collapsed ? "Expand" : "Collapse"}
+                  title={item.collapsed ? "Expand" : "Collapse"}
                 >
-                  {sec.collapsed ? (
+                  {item.collapsed ? (
                     <ChevronRightIcon className="w-4 h-4 text-gray-400" />
                   ) : (
                     <ChevronDownIcon className="w-4 h-4 text-gray-400" />
                   )}
                 </button>
                 
-                {editingSection === sec.id ? (
+                {editingSection === item.id ? (
                   <input
                     className="bg-transparent border-b text-lg font-semibold w-full outline-none"
-                    style={{ borderBottomColor: sec.color }}
-                    value={sec.name}
+                    style={{ borderBottomColor: item.color }}
+                    value={item.name}
                     autoFocus
-                    onChange={e => renameSection(sec.id, e.target.value)}
+                    onChange={e => renameSection(item.id, e.target.value)}
                     onBlur={() => setEditingSection(null)}
                     onKeyDown={e => { if (e.key === 'Enter') setEditingSection(null); }}
                   />
                 ) : (
                   <span
                     className="flex-1 text-lg font-semibold cursor-pointer hover:opacity-80 transition-opacity duration-200"
-                    style={{ color: sec.color }}
+                    style={{ color: item.color }}
                     onClick={() => { 
-                      setSelectedSection(sec.id); 
-                      if (sec.pages.length > 0 && !sec.collapsed) setSelectedPage(sec.pages[0].id); 
+                      setSelectedSection(item.id); 
+                      if (item.pages.length > 0 && !item.collapsed) setSelectedPage(item.pages[0].id); 
                     }}
-                    onDoubleClick={() => setEditingSection(sec.id)}
+                    onDoubleClick={() => setEditingSection(item.id)}
                   >
-                    {sec.name}
+                    {item.name}
                   </span>
                 )}
                 
@@ -696,15 +1128,15 @@ export default function NotebookPage() {
                     className="ml-1 p-1 hover:text-blue-400 relative" 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setColorPickerOpen(colorPickerOpen === sec.id ? null : sec.id);
+                      setColorPickerOpen(colorPickerOpen === item.id ? null : item.id);
                     }} 
                     title="Change Color"
                   >
-                    <SwatchIcon className="w-4 h-4" style={{ color: sec.color }} />
+                    <SwatchIcon className="w-4 h-4" style={{ color: item.color }} />
                   </button>
                   
                   {/* Color Picker Dropdown */}
-                  {colorPickerOpen === sec.id && (
+                  {colorPickerOpen === item.id && (
                     <div 
                       className="absolute right-0 top-8 z-50 bg-[#101014] border border-white/20 rounded-lg p-2 shadow-xl"
                       onClick={(e) => e.stopPropagation()}
@@ -715,7 +1147,7 @@ export default function NotebookPage() {
                             key={color.value}
                             className="w-6 h-6 rounded hover:scale-110 transition-transform border-2 border-white/20"
                             style={{ backgroundColor: color.value }}
-                            onClick={() => changeSectionColor(sec.id, color.value)}
+                            onClick={() => changeSectionColor(item.id, color.value)}
                             title={color.name}
                           />
                         ))}
@@ -724,35 +1156,46 @@ export default function NotebookPage() {
                   )}
                 </div>
                 
-                <button className="ml-1 p-1 hover:text-blue-400" onClick={() => setEditingSection(sec.id)} title="Rename Section"><PencilIcon className="w-4 h-4" /></button>
-                <button className="ml-1 p-1 hover:text-red-400" onClick={() => deleteSection(sec.id)} title="Delete Section"><TrashIcon className="w-4 h-4" /></button>
+                <button className="ml-1 p-1 hover:text-blue-400" onClick={() => setEditingSection(item.id)} title="Rename Section"><PencilIcon className="w-4 h-4" /></button>
+                <button className="ml-1 p-1 hover:text-red-400" onClick={() => deleteSection(item.id)} title="Delete Section"><TrashIcon className="w-4 h-4" /></button>
               </div>
               
               {/* Pages */}
-              {!sec.collapsed && (
+              {!item.collapsed && (
               <div className="pl-4">
-                {sec.pages.map(p => (
-                  <div 
-                    key={p.id} 
-                    className={`flex items-center group px-2 py-1 rounded cursor-move ${
-                      selectedPage === p.id 
-                        ? 'bg-opacity-40' 
-                        : 'hover:bg-white/5'
-                    } ${draggedPage?.pageId === p.id ? 'opacity-50' : ''}`}
-                    style={{ 
-                      backgroundColor: selectedPage === p.id ? `${sec.color}40` : 'transparent'
-                    }}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, sec.id, p.id)}
-                    onClick={() => { setSelectedSection(sec.id); setSelectedPage(p.id); }}
-                  >
+                {item.pages.map((p, pageIndex) => (
+                  <React.Fragment key={p.id}>
+                    {/* Drop indicator BEFORE page */}
+                    <div
+                      className={`h-1 transition-all ${
+                        dragOverPageIndex?.sectionId === item.id && dragOverPageIndex?.pageIndex === pageIndex
+                          ? 'bg-blue-500 h-1 my-0.5 rounded'
+                          : 'h-0'
+                      }`}
+                      onDragOver={(e) => handlePageDragOver(e, item.id, pageIndex)}
+                      onDrop={(e) => handlePageDrop(e, item.id, pageIndex)}
+                    />
+                    
+                    <div 
+                      className={`flex items-center group px-2 py-1 rounded cursor-move ${
+                        selectedPage === p.id 
+                          ? 'bg-opacity-40' 
+                          : 'hover:bg-white/5'
+                      } ${draggedPage?.pageId === p.id ? 'opacity-50' : ''}`}
+                      style={{ 
+                        backgroundColor: selectedPage === p.id ? `${item.color}40` : 'transparent'
+                      }}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, item.id, p.id, pageIndex)}
+                      onClick={() => { setSelectedSection(item.id); setSelectedPage(p.id); }}
+                    >
                     {editingPage === p.id ? (
                       <input
                         className="bg-transparent border-b text-base w-full outline-none"
-                        style={{ borderBottomColor: sec.color }}
+                        style={{ borderBottomColor: item.color }}
                         value={p.name}
                         autoFocus
-                        onChange={e => renamePage(sec.id, p.id, e.target.value)}
+                        onChange={e => renamePage(item.id, p.id, e.target.value)}
                         onBlur={() => setEditingPage(null)}
                         onKeyDown={e => { if (e.key === 'Enter') setEditingPage(null); }}
                       />
@@ -765,18 +1208,34 @@ export default function NotebookPage() {
                       </span>
                     )}
                     <button className="ml-1 p-1 hover:text-blue-400" onClick={e => { e.stopPropagation(); setEditingPage(p.id); }} title="Rename Page"><PencilIcon className="w-4 h-4" /></button>
-                    <button className="ml-1 p-1 hover:text-red-400" onClick={e => { e.stopPropagation(); deletePage(sec.id, p.id); }} title="Delete Page"><TrashIcon className="w-4 h-4" /></button>
+                    <button className="ml-1 p-1 hover:text-red-400" onClick={e => { e.stopPropagation(); deletePage(item.id, p.id); }} title="Delete Page"><TrashIcon className="w-4 h-4" /></button>
                   </div>
+                  
+                  {/* Drop indicator AFTER last page */}
+                  {pageIndex === item.pages.length - 1 && (
+                    <div
+                      className={`h-1 transition-all ${
+                        dragOverPageIndex?.sectionId === item.id && dragOverPageIndex?.pageIndex === pageIndex + 1
+                          ? 'bg-blue-500 h-1 my-0.5 rounded'
+                          : 'h-0'
+                      }`}
+                      onDragOver={(e) => handlePageDragOver(e, item.id, pageIndex + 1)}
+                      onDrop={(e) => handlePageDrop(e, item.id, pageIndex + 1)}
+                    />
+                  )}
+                </React.Fragment>
                 ))}
                 <button
                   className="flex items-center gap-1 text-xs text-blue-300 hover:text-blue-100 transition-colors duration-200 mt-1 mb-2"
-                  onClick={() => addPage(sec.id)}
+                  onClick={() => addPage(item.id)}
                 >
                   <PlusIcon className="w-4 h-4" /> New Page
                 </button>
               </div>
               )}
-            </div>
+                </div>
+              )}
+            </React.Fragment>
           ))}
         </div>
       </aside>
