@@ -356,12 +356,61 @@ export default function NotebookPage() {
 
   // Drag and drop helpers
   const handleDragStart = (e, sectionId, pageId, pageIndex) => {
+    e.stopPropagation(); // Prevent event from bubbling to section drag handlers
     setDraggedPage({ sectionId, pageId, pageIndex });
     e.dataTransfer.effectAllowed = 'move';
   };
   
   const handleDragOver = (e) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  // Separate handler for section drag over that ignores page drags
+  const handleSectionOnlyDragOver = (e) => {
+    // Only handle section drags, ignore page drags
+    if (draggedPage) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  // Handler for section containers that allows page drags to pass through
+  const handleSectionContainerDragOver = (e) => {
+    e.preventDefault(); // ✅ Always prevent default first to allow drops!
+    
+    // If dragging a page, don't stop propagation - let it bubble to page handlers
+    if (draggedPage) {
+      return;
+    }
+    
+    // Only stop propagation for section drags
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  // Clear drag state when drag ends
+  const handleDragEnd = (e) => {
+    setDraggedPage(null);
+    setDraggedSection(null);
+    setDragOverPageIndex(null);
+  };
+
+  // Handle dragging over page elements (entire page row is drop target)
+  const handlePageElementDragOver = (e, sectionId, pageIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Get cursor position relative to the element
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const height = rect.height;
+    
+    // If in top half, insert before this page; if in bottom half, insert after
+    const dropIndex = y < height / 2 ? pageIndex : pageIndex + 1;
+    
+    setDragOverPageIndex({ sectionId, pageIndex: dropIndex });
     e.dataTransfer.dropEffect = 'move';
   };
   
@@ -455,6 +504,9 @@ export default function NotebookPage() {
   };
 
   const handleSectionDragStart = (e, sectionId) => {
+    // Don't start section drag if a page is being dragged
+    if (draggedPage) return;
+    
     setDraggedSection(sectionId);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -501,17 +553,37 @@ export default function NotebookPage() {
                 p.id === pageId 
                   ? { 
                       ...p, 
-                      stickyImages: [
-                        ...(p.stickyImages || []), 
-                        {
-                          id: Date.now().toString(),
-                          imageUrl,
-                          selectedText: position.selectedText,
-                          textStart: position.textStart,
-                          textEnd: position.textEnd,
-                          createdAt: new Date().toISOString()
+                      stickyImages: (() => {
+                        const existingImages = p.stickyImages || [];
+                        
+                        // Check if a sticky note already exists for this text range
+                        const existingNote = existingImages.find(note => 
+                          note.textStart === position.textStart && note.textEnd === position.textEnd
+                        );
+                        
+                        if (existingNote) {
+                          // Add image to existing note
+                          return existingImages.map(note => 
+                            note.id === existingNote.id 
+                              ? { ...note, images: [...(note.images || [note.imageUrl]), imageUrl] }
+                              : note
+                          );
+                        } else {
+                          // Create new sticky note with single image
+                          return [
+                            ...existingImages,
+                            {
+                              id: Date.now().toString(),
+                              imageUrl, // Keep for backward compatibility
+                              images: [imageUrl],
+                              selectedText: position.selectedText,
+                              textStart: position.textStart,
+                              textEnd: position.textEnd,
+                              createdAt: new Date().toISOString()
+                            }
+                          ];
                         }
-                      ]
+                      })()
                     }
                   : p
               )
@@ -608,37 +680,46 @@ export default function NotebookPage() {
   };
 
   // Image upload handling
-  const handleImageUpload = async (file) => {
-    if (!file || !currentUser?.uid || !selectedSection || !selectedPage) {
-      console.log('Upload blocked:', { file: !!file, user: !!currentUser?.uid, section: selectedSection, page: selectedPage });
+  const handleImageUpload = async (files) => {
+    const fileArray = Array.from(files || []);
+    if (fileArray.length === 0 || !currentUser?.uid || !selectedSection || !selectedPage) {
+      console.log('Upload blocked:', { files: fileArray.length, user: !!currentUser?.uid, section: selectedSection, page: selectedPage });
       return;
     }
     
-    console.log('Starting image upload...', { file: file.name, size: file.size });
+    console.log('Starting image upload...', { files: fileArray.length });
     setUploadingImage(true);
     
     try {
-      const imageRef = ref(storage, `sticky-images/${currentUser.uid}/${Date.now()}-${file.name}`);
-      console.log('Uploading to:', imageRef.fullPath);
+      const uploadPromises = fileArray.map(async (file) => {
+        const imageRef = ref(storage, `sticky-images/${currentUser.uid}/${Date.now()}-${file.name}`);
+        console.log('Uploading to:', imageRef.fullPath);
+        
+        await uploadBytes(imageRef, file);
+        const imageUrl = await getDownloadURL(imageRef);
+        console.log('Image uploaded successfully:', imageUrl);
+        return imageUrl;
+      });
       
-      await uploadBytes(imageRef, file);
-      const imageUrl = await getDownloadURL(imageRef);
-      console.log('Image uploaded successfully:', imageUrl);
+      const imageUrls = await Promise.all(uploadPromises);
       
       if (selectionPosition) {
-        console.log('Adding sticky image with position:', selectionPosition);
-        addStickyImage(selectedSection, selectedPage, imageUrl, {
-          selectedText: selectionPosition.selectedText,
-          textStart: selectionPosition.textStart,
-          textEnd: selectionPosition.textEnd
+        console.log('Adding sticky images with position:', selectionPosition);
+        // Add all images to the same sticky note
+        imageUrls.forEach(imageUrl => {
+          addStickyImage(selectedSection, selectedPage, imageUrl, {
+            selectedText: selectionPosition.selectedText,
+            textStart: selectionPosition.textStart,
+            textEnd: selectionPosition.textEnd
+          });
         });
         setSelectionPosition(null);
-        console.log('Sticky image added to page');
+        console.log('Sticky images added to page');
       } else {
         console.log('No selection position found');
       }
     } catch (error) {
-      console.error('Error uploading image:', error);
+      console.error('Error uploading images:', error);
     } finally {
       setUploadingImage(false);
     }
@@ -646,6 +727,33 @@ export default function NotebookPage() {
 
   const triggerImageUpload = () => {
     fileInputRef.current?.click();
+  };
+
+  // Gallery modal state
+  const [showGalleryModal, setShowGalleryModal] = useState(false);
+  const [galleryImages, setGalleryImages] = useState([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
+  const openGallery = (stickyNote) => {
+    const images = stickyNote.images || [stickyNote.imageUrl];
+    setGalleryImages(images);
+    setCurrentImageIndex(0);
+    setShowGalleryModal(true);
+  };
+
+  const addSectionToFolder = (folderId) => {
+    const newSection = {
+      id: Date.now().toString(),
+      name: 'New Section',
+      pages: [],
+      collapsed: false,
+      color: '#3b82f6',
+      isFolder: false,
+      parentId: folderId
+    };
+    
+    setSections(s => [...s, newSection]);
+    setEditingSection(newSection.id);
   };
 
   // Editor bullet support
@@ -807,16 +915,6 @@ export default function NotebookPage() {
             </div>
           )}
           
-          {/* Root Drop Zone for moving sections out of folders */}
-          {draggedSection && !draggedPage && (
-            <div
-              className="mb-2 p-4 border-2 border-dashed border-blue-400 rounded-lg bg-blue-400/10 text-center text-blue-300"
-              onDragOver={(e) => handleSectionDragOver(e, null)}
-              onDrop={(e) => handleSectionDrop(e, null)}
-            >
-              Drop here to move section to root level
-            </div>
-          )}
           
           {/* Sections */}
           {topLevelItems.map(item => (
@@ -824,7 +922,7 @@ export default function NotebookPage() {
               {item.isFolder ? (
                 /* FOLDER RENDERING */
                 <div 
-                  className={`mb-2 rounded-lg border-l-4 ${selectedSection === item.id ? 'bg-opacity-20' : ''} ${draggedSection ? 'border-2 border-dashed border-blue-400' : ''}`}
+                  className={`mb-2 rounded-lg border-l-4 max-h-fit ${selectedSection === item.id ? 'bg-opacity-20' : ''} ${draggedSection ? 'border-2 border-dashed border-blue-400' : ''}`}
                   style={{ 
                     borderLeftColor: item.color || '#3b82f6',
                     backgroundColor: selectedSection === item.id ? `${item.color}20` : 'transparent'
@@ -907,14 +1005,14 @@ export default function NotebookPage() {
                       {getSectionsByParent(item.id).map(childSection => (
                         <div 
                           key={childSection.id} 
-                          className={`mb-2 rounded-lg border-l-4 ${selectedSection === childSection.id ? 'bg-opacity-20' : ''} ${draggedSection === childSection.id ? 'opacity-50' : ''}`}
+                          className={`mb-2 rounded-lg border-l-4 max-h-fit ${selectedSection === childSection.id ? 'bg-opacity-20' : ''} ${draggedSection === childSection.id ? 'opacity-50' : ''}`}
                           style={{ 
                             borderLeftColor: childSection.color || '#3b82f6',
                             backgroundColor: selectedSection === childSection.id ? `${childSection.color}20` : 'transparent'
                           }}
                           draggable
                           onDragStart={(e) => handleSectionDragStart(e, childSection.id)}
-                          onDragOver={handleDragOver}
+                          onDragOver={handleSectionContainerDragOver}
                           onDrop={(e) => handleDrop(e, childSection.id)}
                         >
                           <div className="flex items-center group px-2 py-1">
@@ -967,9 +1065,9 @@ export default function NotebookPage() {
                               <button className="p-1 hover:text-blue-400" onClick={e => { e.stopPropagation(); setEditingSection(childSection.id); }} title="Rename Section"><PencilIcon className="w-4 h-4" /></button>
                               <button className="p-1 hover:text-red-400" onClick={e => { e.stopPropagation(); deleteSection(childSection.id); }} title="Delete Section"><TrashIcon className="w-4 h-4" /></button>
                               <button 
-                                className="p-1 hover:text-orange-400" 
+                                className="p-1 hover:text-orange-400 opacity-100" 
                                 onClick={e => { e.stopPropagation(); setSections(s => s.map(sec => sec.id === childSection.id ? { ...sec, parentId: null } : sec)); }} 
-                                title="Remove from folder"
+                                title="Move to root level"
                               >
                                 <XMarkIcon className="w-4 h-4" />
                               </button>
@@ -1000,9 +1098,9 @@ export default function NotebookPage() {
                                 <React.Fragment key={p.id}>
                                   {/* Drop indicator BEFORE page */}
                                   <div
-                                    className={`h-1 transition-all ${
+                                    className={`transition-all ${
                                       dragOverPageIndex?.sectionId === childSection.id && dragOverPageIndex?.pageIndex === pageIndex
-                                        ? 'bg-blue-500 h-1 my-0.5 rounded'
+                                        ? 'bg-blue-500 h-3 my-1 rounded'
                                         : 'h-0'
                                     }`}
                                     onDragOver={(e) => handlePageDragOver(e, childSection.id, pageIndex)}
@@ -1020,6 +1118,8 @@ export default function NotebookPage() {
                                     }}
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, childSection.id, p.id, pageIndex)}
+                                    onDragOver={(e) => handlePageElementDragOver(e, childSection.id, pageIndex)}
+                                    onDragEnd={handleDragEnd}
                                     onClick={() => { setSelectedSection(childSection.id); setSelectedPage(p.id); }}
                                   >
                                     {editingPage === p.id ? (
@@ -1047,9 +1147,9 @@ export default function NotebookPage() {
                                   {/* Drop indicator AFTER last page */}
                                   {pageIndex === childSection.pages.length - 1 && (
                                     <div
-                                      className={`h-1 transition-all ${
+                                      className={`transition-all ${
                                         dragOverPageIndex?.sectionId === childSection.id && dragOverPageIndex?.pageIndex === pageIndex + 1
-                                          ? 'bg-blue-500 h-1 my-0.5 rounded'
+                                          ? 'bg-blue-500 h-3 my-1 rounded'
                                           : 'h-0'
                                       }`}
                                       onDragOver={(e) => handlePageDragOver(e, childSection.id, pageIndex + 1)}
@@ -1070,18 +1170,26 @@ export default function NotebookPage() {
                       ))}
                     </div>
                   )}
+                  
+                  {/* Add Section to Folder Button */}
+                  <button
+                    className="flex items-center gap-1 text-xs text-blue-300 hover:text-blue-100 transition-colors duration-200 mt-2 mb-2 ml-6"
+                    onClick={() => addSectionToFolder(item.id)}
+                  >
+                    <PlusIcon className="w-4 h-4" /> New Section in Folder
+                  </button>
                 </div>
               ) : (
                 /* REGULAR SECTION RENDERING */
                 <div 
-                  className={`mb-2 rounded-lg border-l-4 ${selectedSection === item.id ? 'bg-opacity-20' : ''} ${draggedSection === item.id ? 'opacity-50' : ''}`}
+                  className={`mb-2 rounded-lg border-l-4 max-h-fit ${selectedSection === item.id ? 'bg-opacity-20' : ''} ${draggedSection === item.id ? 'opacity-50' : ''}`}
                   style={{ 
                     borderLeftColor: item.color || '#3b82f6',
                     backgroundColor: selectedSection === item.id ? `${item.color}20` : 'transparent'
                   }}
                   draggable
                   onDragStart={(e) => handleSectionDragStart(e, item.id)}
-                  onDragOver={handleDragOver}
+                  onDragOver={handleSectionContainerDragOver}
                   onDrop={(e) => handleDrop(e, item.id)}
                 > 
               <div className="flex items-center group px-2 py-1">
@@ -1167,9 +1275,9 @@ export default function NotebookPage() {
                   <React.Fragment key={p.id}>
                     {/* Drop indicator BEFORE page */}
                     <div
-                      className={`h-1 transition-all ${
+                      className={`transition-all ${
                         dragOverPageIndex?.sectionId === item.id && dragOverPageIndex?.pageIndex === pageIndex
-                          ? 'bg-blue-500 h-1 my-0.5 rounded'
+                          ? 'bg-blue-500 h-3 my-1 rounded'
                           : 'h-0'
                       }`}
                       onDragOver={(e) => handlePageDragOver(e, item.id, pageIndex)}
@@ -1187,6 +1295,8 @@ export default function NotebookPage() {
                       }}
                       draggable
                       onDragStart={(e) => handleDragStart(e, item.id, p.id, pageIndex)}
+                      onDragOver={(e) => handlePageElementDragOver(e, item.id, pageIndex)}
+                      onDragEnd={handleDragEnd}
                       onClick={() => { setSelectedSection(item.id); setSelectedPage(p.id); }}
                     >
                     {editingPage === p.id ? (
@@ -1214,9 +1324,9 @@ export default function NotebookPage() {
                   {/* Drop indicator AFTER last page */}
                   {pageIndex === item.pages.length - 1 && (
                     <div
-                      className={`h-1 transition-all ${
+                      className={`transition-all ${
                         dragOverPageIndex?.sectionId === item.id && dragOverPageIndex?.pageIndex === pageIndex + 1
-                          ? 'bg-blue-500 h-1 my-0.5 rounded'
+                          ? 'bg-blue-500 h-3 my-1 rounded'
                           : 'h-0'
                       }`}
                       onDragOver={(e) => handlePageDragOver(e, item.id, pageIndex + 1)}
@@ -1306,28 +1416,29 @@ export default function NotebookPage() {
               <div className="flex-1 overflow-y-auto">
                 {page.stickyImages && page.stickyImages.length > 0 ? (
                   <div className="grid grid-cols-2 gap-2">
-                    {page.stickyImages.map((stickyImage, index) => {
-                      const isHighlighted = highlightedImageId === stickyImage.id;
+                    {page.stickyImages.map((stickyNote, index) => {
+                      const isHighlighted = highlightedImageId === stickyNote.id;
+                      const images = stickyNote.images || [stickyNote.imageUrl];
+                      const imageCount = images.length;
+                      const firstImage = images[0];
+                      
                       return (
                         <div
-                          key={stickyImage.id}
+                          key={stickyNote.id}
                           className="transition-all duration-300"
-                          data-sticky-id={stickyImage.id}
+                          data-sticky-id={stickyNote.id}
                         >
                           <button
-                            onClick={() => {
-                              setSelectedImage(stickyImage.imageUrl);
-                              setShowImageModal(true);
-                            }}
+                            onClick={() => openGallery(stickyNote)}
                             className={`group w-full aspect-square rounded-lg shadow-md hover:shadow-xl transition-all duration-500 relative overflow-hidden ${
                               isHighlighted 
                                 ? 'scale-[1.5] shadow-2xl z-20' 
                                 : 'hover:scale-105 hover:z-10'
                             }`}
-                            title={`Image for: "${stickyImage.selectedText || 'Unknown text'}"`}
+                            title={`Gallery for: "${stickyNote.selectedText || 'Unknown text'}" (${imageCount} image${imageCount > 1 ? 's' : ''})`}
                           >
                             {/* Loading State */}
-                            {loadingImages.has(stickyImage.id) && (
+                            {loadingImages.has(stickyNote.id) && (
                               <div className="absolute inset-0 flex items-center justify-center bg-gray-800/80">
                                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
                               </div>
@@ -1335,17 +1446,17 @@ export default function NotebookPage() {
                             
                             {/* Actual Image */}
                             <img
-                              src={stickyImage.imageUrl}
-                              alt={`Sticky note for: ${stickyImage.selectedText}`}
+                              src={firstImage}
+                              alt={`Sticky note for: ${stickyNote.selectedText}`}
                               className="w-full h-full object-cover transition-all duration-300 group-hover:brightness-105"
                               onLoadStart={() => {
-                                setLoadingImages(prev => new Set(prev).add(stickyImage.id));
+                                setLoadingImages(prev => new Set(prev).add(stickyNote.id));
                               }}
                               onError={(e) => {
                                 // Fallback to icon if image fails to load
                                 setLoadingImages(prev => {
                                   const newSet = new Set(prev);
-                                  newSet.delete(stickyImage.id);
+                                  newSet.delete(stickyNote.id);
                                   return newSet;
                                 });
                                 e.target.style.display = 'none';
@@ -1355,7 +1466,7 @@ export default function NotebookPage() {
                                 // Hide fallback icon if image loads successfully
                                 setLoadingImages(prev => {
                                   const newSet = new Set(prev);
-                                  newSet.delete(stickyImage.id);
+                                  newSet.delete(stickyNote.id);
                                   return newSet;
                                 });
                                 e.target.parentElement.querySelector('.fallback-icon').style.display = 'none';
@@ -1367,16 +1478,23 @@ export default function NotebookPage() {
                               <PhotoIcon className="w-6 h-6 text-yellow-800" />
                             </div>
                             
+                            {/* Image Count Badge */}
+                            {imageCount > 1 && (
+                              <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                                {imageCount}
+                              </div>
+                            )}
+                            
                             {/* Text Overlay */}
                             <div className="absolute bottom-0 left-0 right-0 text-white text-xs p-1 truncate backdrop-blur-sm bg-black/60 group-hover:bg-black/70 transition-all duration-300">
-                              {stickyImage.selectedText ? stickyImage.selectedText.substring(0, 12) + '...' : 'Image'}
+                              {stickyNote.selectedText ? stickyNote.selectedText.substring(0, 12) + '...' : 'Gallery'}
                             </div>
 
                             {/* Delete Button inside the image button to keep positioning consistent */}
                             <span
-                              onClick={(e) => { e.stopPropagation(); deleteStickyImage(selectedSection, selectedPage, stickyImage.id); }}
+                              onClick={(e) => { e.stopPropagation(); deleteStickyImage(selectedSection, selectedPage, stickyNote.id); }}
                               className="absolute top-1 right-1 w-4 h-4 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-30"
-                              title="Delete sticky image"
+                              title="Delete sticky note"
                             >
                               <XMarkIcon className="w-2 h-2 text-white" />
                             </span>
@@ -1406,10 +1524,11 @@ export default function NotebookPage() {
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          multiple
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) {
-              handleImageUpload(file);
+            const files = e.target.files;
+            if (files && files.length > 0) {
+              handleImageUpload(files);
               e.target.value = ''; // Reset input
             }
           }}
@@ -1435,6 +1554,67 @@ export default function NotebookPage() {
                 className="max-w-full max-h-full object-contain rounded-xl shadow-3xl hover:scale-105 transition-transform duration-300"
                 onClick={(e) => e.stopPropagation()}
               />
+            </div>
+          </div>
+        )}
+        
+        {/* Gallery Modal */}
+        {showGalleryModal && galleryImages.length > 0 && (
+          <div 
+            className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 animate-fadeIn" 
+            onClick={() => setShowGalleryModal(false)}
+          >
+            <div className="relative max-w-6xl max-h-6xl p-4 animate-scaleIn">
+              {/* Close Button */}
+              <button
+                onClick={() => setShowGalleryModal(false)}
+                className="absolute top-2 right-2 w-12 h-12 bg-red-500 hover:bg-red-400 hover:scale-110 rounded-full flex items-center justify-center text-white z-10 transition-all duration-300 shadow-lg hover:shadow-red-500/30"
+              >
+                <XMarkIcon className="w-7 h-7" />
+              </button>
+              
+              {/* Navigation Buttons */}
+              {galleryImages.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex(prev => prev > 0 ? prev - 1 : galleryImages.length - 1);
+                    }}
+                    className="absolute left-2 top-1/2 transform -translate-y-1/2 w-12 h-12 bg-blue-500 hover:bg-blue-400 hover:scale-110 rounded-full flex items-center justify-center text-white z-10 transition-all duration-300 shadow-lg hover:shadow-blue-500/30"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex(prev => prev < galleryImages.length - 1 ? prev + 1 : 0);
+                    }}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 w-12 h-12 bg-blue-500 hover:bg-blue-400 hover:scale-110 rounded-full flex items-center justify-center text-white z-10 transition-all duration-300 shadow-lg hover:shadow-blue-500/30"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </>
+              )}
+              
+              {/* Current Image */}
+              <img
+                src={galleryImages[currentImageIndex]}
+                alt={`Gallery image ${currentImageIndex + 1}`}
+                className="max-w-full max-h-full object-contain rounded-xl shadow-3xl hover:scale-105 transition-transform duration-300"
+                onClick={(e) => e.stopPropagation()}
+              />
+              
+              {/* Image Counter */}
+              {galleryImages.length > 1 && (
+                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 text-white px-3 py-1 rounded-full text-sm">
+                  {currentImageIndex + 1} / {galleryImages.length}
+                </div>
+              )}
             </div>
           </div>
         )}
