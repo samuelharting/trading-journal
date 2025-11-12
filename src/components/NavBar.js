@@ -1,9 +1,9 @@
-import React, { useContext, useState, useRef } from "react";
+import React, { useContext, useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { PlusIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import { PlusIcon, XMarkIcon, CheckIcon } from '@heroicons/react/24/solid';
 import { UserContext } from "../App";
 import { db } from '../firebase';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { CalendarIcon, DocumentTextIcon, ChartBarIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 
 const RobotIcon = () => (
@@ -23,6 +23,7 @@ const NavBar = () => {
   const [resetting, setResetting] = useState(false);
   const navRef = useRef();
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const [todayRulesResponse, setTodayRulesResponse] = useState(null); // 'yes', 'no', or null
   const navButtons = [
     { label: "Home", path: "/", icon: <CalendarIcon className="w-6 h-6 text-[#e5e5e5]" /> },
     { label: "Trades", path: "/trades", icon: (
@@ -44,7 +45,15 @@ const NavBar = () => {
       const now = new Date();
       const month = now.getMonth() + 1;
       const day = now.getDate();
-      navigate(`/day/${month}/${day}`, { state: { date: now.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) } });
+      // Store current location to return to after save/cancel
+      const returnPath = location.pathname;
+      navigate(`/day/${month}/${day}`, { 
+        state: { 
+          date: now.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+          directAdd: true,
+          returnPath: returnPath
+        } 
+      });
     },
   };
   const navButtonsWithQuickAdd = [
@@ -129,6 +138,99 @@ const NavBar = () => {
     if (btn.path === "/context" && location.pathname.startsWith("/context")) return true;
     
     return false;
+  };
+
+  // Get today's date string in YYYY-MM-DD format
+  const getTodayDateString = () => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  };
+
+  // Load today's rules response and reset at midnight
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const loadTodayResponse = async () => {
+      try {
+        const today = getTodayDateString();
+        const rulesDocRef = doc(db, 'users', currentUser.uid, 'rulesTracking', today);
+        const rulesSnap = await getDoc(rulesDocRef);
+        
+        if (rulesSnap.exists()) {
+          const data = rulesSnap.data();
+          setTodayRulesResponse(data.response); // 'yes' or 'no'
+        } else {
+          setTodayRulesResponse(null);
+        }
+      } catch (error) {
+        console.error('Error loading today\'s rules response:', error);
+      }
+    };
+    
+    loadTodayResponse();
+    
+    // Calculate milliseconds until midnight
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0); // Set to midnight
+    const msUntilMidnight = tomorrow.getTime() - now.getTime();
+    
+    // Check every minute to see if date changed (for midnight reset)
+    const checkInterval = setInterval(() => {
+      const currentDate = getTodayDateString();
+      const storedDate = localStorage.getItem(`rulesDate_${currentUser.uid}`);
+      if (storedDate && storedDate !== currentDate) {
+        // Date changed - reset the response
+        localStorage.setItem(`rulesDate_${currentUser.uid}`, currentDate);
+        setTodayRulesResponse(null);
+        loadTodayResponse();
+      } else if (!storedDate) {
+        // First time - store current date
+        localStorage.setItem(`rulesDate_${currentUser.uid}`, currentDate);
+      }
+    }, 60000); // Check every minute
+    
+    // Set timeout to reset at midnight
+    const midnightTimeout = setTimeout(() => {
+      setTodayRulesResponse(null);
+      const newDate = getTodayDateString();
+      localStorage.setItem(`rulesDate_${currentUser.uid}`, newDate);
+      loadTodayResponse();
+    }, msUntilMidnight);
+    
+    // Also check on window focus in case user left the page and came back
+    const handleFocus = () => {
+      loadTodayResponse();
+    };
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      clearTimeout(midnightTimeout);
+      clearInterval(checkInterval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [currentUser]);
+
+  // Handle rules response (yes or no)
+  const handleRulesResponse = async (response) => {
+    if (!currentUser) return;
+    
+    try {
+      const today = getTodayDateString();
+      const rulesDocRef = doc(db, 'users', currentUser.uid, 'rulesTracking', today);
+      await setDoc(rulesDocRef, {
+        response: response, // 'yes' or 'no'
+        date: today,
+        timestamp: new Date().toISOString()
+      }, { merge: true });
+      
+      setTodayRulesResponse(response);
+      console.log(`Rules response saved: ${response} for ${today}`);
+    } catch (error) {
+      console.error('Error saving rules response:', error);
+      alert('Failed to save rules response. Please try again.');
+    }
   };
 
   return (
@@ -238,8 +340,27 @@ const NavBar = () => {
         })}
       </div>
       
-      {/* Right: Context Button */}
-      <div className="flex items-center justify-end min-w-0 flex-1">
+      {/* Right: Rules Tracking + Context Button */}
+      <div className="flex items-center justify-end gap-2 sm:gap-4 min-w-0 flex-1">
+        {/* Rules Tracking Question */}
+        <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg bg-black/30 border border-white/10">
+          <span className="text-xs sm:text-sm text-neutral-300 whitespace-nowrap hidden sm:inline">Did I follow my rules today?</span>
+          <span className="text-xs text-neutral-300 whitespace-nowrap sm:hidden">Rules?</span>
+          <button
+            onClick={() => handleRulesResponse('yes')}
+            className={`p-1.5 rounded transition-all ${todayRulesResponse === 'yes' ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-green-600/50 text-neutral-300'}`}
+            title="Yes, I followed my rules"
+          >
+            <CheckIcon className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleRulesResponse('no')}
+            className={`p-1.5 rounded transition-all ${todayRulesResponse === 'no' ? 'bg-red-600 text-white' : 'bg-neutral-700 hover:bg-red-600/50 text-neutral-300'}`}
+            title="No, I did not follow my rules"
+          >
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        </div>
         {(() => {
           const isActive = isButtonActive(contextBtn);
           return (

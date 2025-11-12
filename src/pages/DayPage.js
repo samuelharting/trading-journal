@@ -62,12 +62,17 @@ const DayPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [forceDepositEntry, setForceDepositEntry] = useState(false);
+  const [returnPath, setReturnPath] = useState(null);
 
-  // Check if we should force a deposit entry
+  // Check if we should force a deposit entry or direct add
   useEffect(() => {
     if (location.state?.forceDepositEntry) {
       setForceDepositEntry(true);
       setShowForm(true);
+    }
+    if (location.state?.directAdd) {
+      setShowForm(true);
+      setReturnPath(location.state?.returnPath || '/');
     }
   }, [location.state]);
 
@@ -135,58 +140,72 @@ const DayPage = () => {
     }
   };
 
+  // If directAdd is true, hide the DayPage content (form will show as overlay)
+  const isDirectAdd = location.state?.directAdd === true;
+
   return (
     <div className="w-full min-h-screen bg-black pt-20 px-4 sm:px-8 relative">
-      <div className="max-w-full overflow-y-auto" style={{ height: 'calc(100vh - 80px)' }}>
-      <div className="absolute left-0 top-4 z-30">
-        <button
-          className="flex items-center gap-2 ml-6 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] rounded shadow"
-          onClick={() => navigate(`/month/${year}/${month}`)}
-        >
-          <ArrowLeftIcon className="w-5 h-5" />
-          Back
-        </button>
-      </div>
-      
-      {/* Big Bold Date Display */}
-      <div className="w-full text-center mb-8 mt-4">
-        <div className="text-4xl md:text-6xl font-bold text-[#e5e5e5] mb-2">
-          {new Date(year, month - 1, day).toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-          })}
+      {!isDirectAdd && (
+        <div className="max-w-full overflow-y-auto" style={{ height: 'calc(100vh - 80px)' }}>
+          <div className="absolute left-0 top-4 z-30">
+            <button
+              className="flex items-center gap-2 ml-6 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-[#e5e5e5] rounded shadow"
+              onClick={() => navigate(`/month/${year}/${month}`)}
+            >
+              <ArrowLeftIcon className="w-5 h-5" />
+              Back
+            </button>
+          </div>
+          
+          {/* Big Bold Date Display */}
+          <div className="w-full text-center mb-8 mt-4">
+            <div className="text-4xl md:text-6xl font-bold text-[#e5e5e5] mb-2">
+              {new Date(year, month - 1, day).toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </div>
+          </div>
+          
+          <div className="sticky top-4 z-30 w-full flex justify-center mb-6">
+            {!showForm && (
+              <button
+                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded shadow"
+                onClick={() => setShowForm(true)}
+              >
+                Add Entry
+              </button>
+            )}
+          </div>
+          {loading ? <div className="flex justify-center items-center py-24"><Spinner size={48} /></div> : <JournalEntryList entries={entries.filter(entry => !entry.isResetExcluded)} />}
         </div>
-      </div>
-      
-      <div className="sticky top-4 z-30 w-full flex justify-center mb-6">
-        {!showForm && (
-          <button
-            className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded shadow"
-            onClick={() => setShowForm(true)}
-          >
-            Add Entry
-          </button>
-        )}
-      </div>
-      {loading ? <div className="flex justify-center items-center py-24"><Spinner size={48} /></div> : <JournalEntryList entries={entries.filter(entry => !entry.isResetExcluded)} />}
+      )}
       {showForm && (
         <JournalEntryForm 
           onSave={(savedEntry) => {
             handleAddEntry(savedEntry);
             setShowForm(false);
             setForceDepositEntry(false);
+            // If we came from Quick Add, navigate to the day page to see the entry
+            if (returnPath) {
+              // Clear the directAdd flag so we see the day page content
+              navigate(`/day/${month}/${day}`, { replace: true });
+            }
           }} 
           onCancel={() => {
             setShowForm(false);
             setForceDepositEntry(false);
+            // If we came from Quick Add, navigate back to previous page
+            if (returnPath) {
+              navigate(returnPath);
+            }
           }} 
           initialAccountBalance={initialAccountBalance}
           forceEntryType={forceDepositEntry ? 'deposit' : null}
         />
       )}
-      </div>
     </div>
   );
 };

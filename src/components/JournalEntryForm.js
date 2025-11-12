@@ -16,7 +16,6 @@ import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { UserContext } from '../App';
 
 const tickerOptions = ["MES", "MNQ", "BTC", "GL", "SL"];
-const poiOptions = ["REHs", "RELs", "ORG", "HTF PD Array", "HTF Liquidity", "EQ"];
 const sessionOptions = ["pre-market", "NY-AM", "NY-Lch", "NY-PM", "Asia", "London"];
 
 const initialState = {
@@ -149,7 +148,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
     manipulation: null,
     smt: null,
   });
-  const [poi, setPoi] = useState([]);
+  const [poi, setPoi] = useState("");
 
   // Add new state for economic release
   const [economicRelease, setEconomicRelease] = useState("");
@@ -266,7 +265,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
       ...form,
       ...sessionContext,
       ...tradeEnv,
-      poi: poi.length > 0 ? poi : [],
+      poi: poi || "",
       economicRelease,
       tradeSession: form.tradeSession,
       title: entryType === 'deposit' ? `$${Number(form.pnl).toFixed(2)} Deposit` : form.title, // Auto-generate title for deposits
@@ -294,7 +293,7 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
       onSave({ ...trimmedEntry, id: docRef.id });
       setForm(initialState);
       setScreenshots([]);
-      setPoi([]);
+      setPoi("");
       // Reset toggle states to N/A
       setSessionContext({
         dailyHighLowTaken: null,
@@ -640,29 +639,17 @@ const JournalEntryForm = ({ onSave, onCancel, initialAccountBalance, forceEntryT
                   </div>
                   <span className="text-lg font-bold text-emerald-300">POI</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    {poiOptions.map(option => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => {
-                          setPoi(prevPoi => 
-                            prevPoi.includes(option) 
-                              ? prevPoi.filter(p => p !== option)
-                              : [...prevPoi, option]
-                          );
-                        }}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                          poi.includes(option)
-                            ? 'bg-blue-600 text-white shadow-lg'
-                            : 'bg-neutral-800 text-[#e5e5e5] hover:bg-neutral-700 border border-neutral-600'
-                        }`}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
+                <div className="flex flex-col">
+                  <label className="text-sm font-semibold text-emerald-300 mb-2">Point of Interest:</label>
+                  <input
+                    type="text"
+                    value={poi}
+                    onChange={(e) => setPoi(e.target.value)}
+                    className="w-full bg-neutral-900/80 text-[#e5e5e5] p-3 rounded-lg border border-neutral-600/50 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-400 transition-all text-sm font-medium"
+                    placeholder="Enter POI (e.g. REHs, RELs, ORG, HTF PD Array...)"
+                  />
+                </div>
+              </motion.div>
             </div>
 
             {/* Right Column */}

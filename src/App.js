@@ -76,9 +76,32 @@ function App() {
     if (!accountToDelete || !currentUser) return;
     
     try {
-      // Delete the account document
       const { db } = await import('./firebase');
-      const { deleteDoc, doc } = await import('firebase/firestore');
+      const { deleteDoc, doc, collection, getDocs, addDoc } = await import('firebase/firestore');
+      
+      // Before deleting account, move all entries to orphanedEntries collection
+      const entriesCol = collection(db, 'users', currentUser.uid, 'accounts', accountToDelete.id, 'entries');
+      const entriesSnap = await getDocs(entriesCol);
+      
+      if (entriesSnap.docs.length > 0) {
+        const orphanedCol = collection(db, 'users', currentUser.uid, 'orphanedEntries');
+        
+        // Move each entry to orphanedEntries with account info
+        const movePromises = entriesSnap.docs.map(async (entryDoc) => {
+          const entryData = entryDoc.data();
+          await addDoc(orphanedCol, {
+            ...entryData,
+            originalAccountId: accountToDelete.id,
+            originalAccountName: accountToDelete.name,
+            orphanedDate: new Date().toISOString()
+          });
+        });
+        
+        await Promise.all(movePromises);
+        console.log(`Moved ${entriesSnap.docs.length} entries to orphanedEntries`);
+      }
+      
+      // Now delete the account document (this will also delete the entries subcollection)
       await deleteDoc(doc(db, 'users', currentUser.uid, 'accounts', accountToDelete.id));
       
       // Remove from local state

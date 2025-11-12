@@ -756,20 +756,9 @@ export default function NotebookPage() {
     setEditingSection(newSection.id);
   };
 
-  // Editor bullet support
+  // Editor input handler - no automatic formatting
   const handleEditorInput = (e) => {
-    let value = e.target.value;
-    // Bullet support: auto-insert bullet on new line if previous line starts with - or *
-    const lines = value.split("\n");
-    for (let i = 1; i < lines.length; i++) {
-      if ((lines[i - 1].trim().startsWith("-") || lines[i - 1].trim().startsWith("*")) && lines[i] === "") {
-        lines[i] = "- ";
-      }
-    }
-    value = lines.join("\n");
-    if (value !== e.target.value) {
-      e.target.value = value;
-    }
+    const value = e.target.value;
     setPageContent(selectedSection, selectedPage, value);
   };
 

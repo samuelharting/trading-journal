@@ -206,6 +206,22 @@ const ContextPage = () => {
         allEntries.push(...accountEntries);
       }
       
+      // Fetch orphaned entries (from deleted accounts)
+      try {
+        const orphanedCol = collection(db, 'users', currentUser.uid, 'orphanedEntries');
+        const orphanedSnap = await getDocs(orphanedCol);
+        const orphanedEntries = orphanedSnap.docs.map(d => ({ 
+          id: d.id,
+          ...d.data(), 
+          accountId: d.data().originalAccountId || 'deleted',
+          accountName: d.data().originalAccountName || 'Deleted Account',
+          isOrphaned: true
+        }));
+        allEntries.push(...orphanedEntries);
+      } catch (error) {
+        console.log('No orphaned entries found or error fetching:', error);
+      }
+      
       // Sort all entries by creation date (newest first) using normalized timestamp
       allEntries.sort((a, b) => getCreatedTimeMs(b) - getCreatedTimeMs(a));
       
@@ -507,6 +523,22 @@ track and show stats. you can share opinions or analysis but keep in minimal`;
         accountName: account.name
       }));
       allEntries.push(...accountEntries);
+    }
+    
+    // Fetch orphaned entries (from deleted accounts)
+    try {
+      const orphanedCol = collection(db, 'users', currentUser.uid, 'orphanedEntries');
+      const orphanedSnap = await getDocs(orphanedCol);
+      const orphanedEntries = orphanedSnap.docs.map(d => ({ 
+        id: d.id,
+        ...d.data(), 
+        accountId: d.data().originalAccountId || 'deleted',
+        accountName: d.data().originalAccountName || 'Deleted Account',
+        isOrphaned: true
+      }));
+      allEntries.push(...orphanedEntries);
+    } catch (error) {
+      console.log('No orphaned entries found or error fetching:', error);
     }
     
     // Sort all entries by creation date (newest first) using normalized timestamp

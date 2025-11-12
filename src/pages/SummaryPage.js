@@ -6,7 +6,9 @@ import {
   CalendarIcon,
   BoltIcon,
   ArrowTrendingUpIcon,
-  PencilIcon
+  PencilIcon,
+  CheckIcon,
+  XMarkIcon
 } from "@heroicons/react/24/outline";
 import { UserContext } from "../App";
 import { db } from '../firebase';
@@ -693,6 +695,7 @@ const SummaryPage = () => {
   const [dailyPnl, setDailyPnl] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState('all'); // 'all' or specific year
+  const [rulesStats, setRulesStats] = useState({ currentStreak: 0, totalYes: 0, totalNo: 0 });
   const navigate = useNavigate();
   
   // Year dropdown options: All Time + dynamic range based on current year
@@ -742,6 +745,48 @@ const SummaryPage = () => {
     
     fetchEntries();
   }, [currentUser, selectedAccount, dataRefreshTrigger, selectedYear]);
+
+  // Fetch rules tracking stats
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const fetchRulesStats = async () => {
+      try {
+        const { collection, getDocs } = await import('firebase/firestore');
+        const rulesCol = collection(db, 'users', currentUser.uid, 'rulesTracking');
+        const rulesSnap = await getDocs(rulesCol);
+        
+        const rulesData = rulesSnap.docs.map(doc => ({
+          date: doc.id,
+          ...doc.data()
+        })).sort((a, b) => b.date.localeCompare(a.date)); // Sort by date descending
+        
+        // Calculate totals
+        const totalYes = rulesData.filter(r => r.response === 'yes').length;
+        const totalNo = rulesData.filter(r => r.response === 'no').length;
+        
+        // Calculate current streak (consecutive 'yes' responses from most recent)
+        let currentStreak = 0;
+        for (const rule of rulesData) {
+          if (rule.response === 'yes') {
+            currentStreak++;
+          } else {
+            break; // Streak broken
+          }
+        }
+        
+        setRulesStats({
+          currentStreak,
+          totalYes,
+          totalNo
+        });
+      } catch (error) {
+        console.error('Error fetching rules stats:', error);
+      }
+    };
+    
+    fetchRulesStats();
+  }, [currentUser, dataRefreshTrigger]);
 
   // Note: Removed visibility/focus refresh since we now have triggerDataRefresh mechanism
 
@@ -1485,6 +1530,31 @@ const SummaryPage = () => {
                 <div className="text-center">
                   <div className="text-3xl font-bold text-[#DC2626] mb-1">{streaks.maxLoss}</div>
                   <div className="text-sm font-light text-neutral-400 uppercase tracking-wider">Max Loss</div>
+                </div>
+              </div>
+              
+              {/* Rules Tracking Stats */}
+              <div className="mt-6 pt-6 border-t border-neutral-700">
+                <div className="text-lg font-bold mb-3 text-[#e5e5e5] tracking-tight">Rules Following</div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-[#10B981] mb-1 flex items-center justify-center gap-1">
+                      <CheckIcon className="w-5 h-5" />
+                      {rulesStats.totalYes}
+                    </div>
+                    <div className="text-xs font-light text-neutral-400 uppercase tracking-wider">Total Yes</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-[#EF4444] mb-1 flex items-center justify-center gap-1">
+                      <XMarkIcon className="w-5 h-5" />
+                      {rulesStats.totalNo}
+                    </div>
+                    <div className="text-xs font-light text-neutral-400 uppercase tracking-wider">Total No</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-[#3B82F6] mb-1">{rulesStats.currentStreak}</div>
+                    <div className="text-xs font-light text-neutral-400 uppercase tracking-wider">Current Streak</div>
+                  </div>
                 </div>
               </div>
             </div>

@@ -31,30 +31,37 @@ const TradesPage = () => {
   
   const navigate = useNavigate();
 
-  // Function to delete a trade from all accounts
+  // Function to delete a trade from all accounts and orphaned entries
   const deleteTrade = async (entry) => {
     if (!currentUser || !entry) return;
     
     try {
-      // Get all accounts for the current user
-      const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
-      const accountsSnap = await getDocs(accountsCol);
-      const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Delete the entry from all accounts where it exists
-      const deletePromises = accounts.map(async (account) => {
-        const entryDoc = doc(db, 'users', currentUser.uid, 'accounts', account.id, 'entries', entry.id);
-        try {
-          await deleteDoc(entryDoc);
-          console.log(`✅ Deleted entry from account: ${account.name}`);
-        } catch (error) {
-          // Entry might not exist in this account, that's okay
-          console.log(`ℹ️ Entry not found in account: ${account.name}`);
-        }
-      });
-      
-      await Promise.all(deletePromises);
-      console.log('✅ Trade deleted from all accounts successfully');
+      // If entry is orphaned, delete from orphanedEntries collection
+      if (entry.isOrphaned) {
+        const orphanedDoc = doc(db, 'users', currentUser.uid, 'orphanedEntries', entry.id);
+        await deleteDoc(orphanedDoc);
+        console.log('✅ Deleted orphaned entry');
+      } else {
+        // Get all accounts for the current user
+        const accountsCol = collection(db, 'users', currentUser.uid, 'accounts');
+        const accountsSnap = await getDocs(accountsCol);
+        const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Delete the entry from all accounts where it exists
+        const deletePromises = accounts.map(async (account) => {
+          const entryDoc = doc(db, 'users', currentUser.uid, 'accounts', account.id, 'entries', entry.id);
+          try {
+            await deleteDoc(entryDoc);
+            console.log(`✅ Deleted entry from account: ${account.name}`);
+          } catch (error) {
+            // Entry might not exist in this account, that's okay
+            console.log(`ℹ️ Entry not found in account: ${account.name}`);
+          }
+        });
+        
+        await Promise.all(deletePromises);
+        console.log('✅ Trade deleted from all accounts successfully');
+      }
       
       // Update local state instead of refreshing the page
       setGroupedImages(prev => prev.filter(group => group.entry.id !== entry.id));
@@ -97,6 +104,24 @@ const TradesPage = () => {
           }))
           .filter(entry => !entry.isDeposit && !entry.isPayout); // Only trades and tape readings
         allTradesAndTapeReadings.push(...accountEntries);
+      }
+      
+      // Fetch orphaned entries (from deleted accounts)
+      try {
+        const orphanedCol = collection(db, 'users', currentUser.uid, 'orphanedEntries');
+        const orphanedSnap = await getDocs(orphanedCol);
+        const orphanedEntries = orphanedSnap.docs
+          .map(doc => ({ 
+            ...doc.data(), 
+            id: doc.id,
+            accountId: doc.data().originalAccountId || 'deleted',
+            accountName: doc.data().originalAccountName || 'Deleted Account',
+            isOrphaned: true
+          }))
+          .filter(entry => !entry.isDeposit && !entry.isPayout); // Only trades and tape readings
+        allTradesAndTapeReadings.push(...orphanedEntries);
+      } catch (error) {
+        console.log('No orphaned entries found or error fetching:', error);
       }
       
       // DEPOSITS & PAYOUTS: Fetch from ONLY the selected account (account-specific)
