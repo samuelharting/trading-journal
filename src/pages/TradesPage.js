@@ -17,7 +17,8 @@ const TradesPage = () => {
   // const [allEntries, setAllEntries] = useState([]); // For navigation through all entries - unused for now
   const [favorites, setFavorites] = useState({});
   const [selectedImage, setSelectedImage] = useState(null);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  // selectedImageIndex state - only setter is used (functional updates), so state variable itself is unused
+  const [, setSelectedImageIndex] = useState(0);
   const [tradeEntry, setTradeEntry] = useState(null);
   const [showTradeDetails, setShowTradeDetails] = useState(false);
   
@@ -404,7 +405,7 @@ const TradesPage = () => {
     setTradeEntry(null);
     setShowTradeDetails(false);
     setShowHeader(true);
-  }, []); // No dependencies - only uses setters which are stable
+  }, [setShowHeader]); // Include setShowHeader as dependency
 
   const navigateImage = useCallback((direction) => {
     if (direction === 'prev') {

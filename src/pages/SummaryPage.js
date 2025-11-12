@@ -19,7 +19,7 @@ import StatCard from '../components/StatCard';
 import CircleCard from '../components/CircleCard';
 import AnimatedNumber from '../components/AnimatedNumber';
 import { useNavigate } from "react-router-dom";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Area, AreaChart, defs, linearGradient, stop } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { getTradingPerformance } from '../statsUtils';
 
 function sumPrecise(arr) {
@@ -103,28 +103,26 @@ function getStats(entries, selectedYear = 'all') {
 }
 
 function getEquityCurve(entries, selectedYear = 'all') {
-  // Filter entries by year if a specific year is selected
-  let filteredEntries = entries;
-  if (selectedYear !== 'all') {
-    filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
-  }
+  // Filter entries by year if a specific year is selected - unused for now, using entries directly
+  // let filteredEntries = entries;
+  // if (selectedYear !== 'all') {
+  //   filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
+  // }
   
-  // Helper function to get entry date using year/month/day fields (consistent with other functions)
-  const getEntryDate = (entry) => {
-    if (entry.year && entry.month && entry.day) {
-      // Use the year/month/day fields that are stored as strings
-      const year = parseInt(entry.year, 10);
-      const month = parseInt(entry.month, 10) - 1; // Convert to 0-indexed
-      const day = parseInt(entry.day, 10);
-      return new Date(year, month, day);
-    }
-    // Fallback to created timestamp
-    if (entry.created) {
-      const timestamp = entry.created.split('-')[0]; // Remove random suffix
-      return new Date(timestamp);
-    }
-    return new Date();
-  };
+  // Helper function to get entry date - unused for now, using getTimestamp instead
+  // const getEntryDate = (entry) => {
+  //   if (entry.year && entry.month && entry.day) {
+  //     const year = parseInt(entry.year, 10);
+  //     const month = parseInt(entry.month, 10) - 1;
+  //     const day = parseInt(entry.day, 10);
+  //     return new Date(year, month, day);
+  //   }
+  //   if (entry.created) {
+  //     const timestamp = entry.created.split('-')[0];
+  //     return new Date(timestamp);
+  //   }
+  //   return new Date();
+  // };
 
   // Sort entries chronologically - using created timestamp as primary sort
   const sorted = [...entries].sort((a, b) => {
@@ -239,11 +237,11 @@ function getEquityCurve(entries, selectedYear = 'all') {
 }
 
 function getStreaks(entries, selectedYear = 'all') {
-  // Filter entries by year if a specific year is selected
-  let filteredEntries = entries;
-  if (selectedYear !== 'all') {
-    filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
-  }
+  // Filter entries by year if a specific year is selected - unused for now, using entries directly
+  // let filteredEntries = entries;
+  // if (selectedYear !== 'all') {
+  //   filteredEntries = entries.filter(e => String(e.year) === String(selectedYear));
+  // }
   
   // Helper function to get entry date using year/month/day fields (consistent with other functions)
   const getEntryDate = (entry) => {
@@ -343,10 +341,10 @@ function getWeekNumber(d) {
   return weekNo;
 }
 
-// Simple static number display - no animations
-const StaticNumber = ({ value, decimals = 2, className = "" }) => {
-  return <span className={className}>{value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}</span>;
-};
+// Simple static number display - no animations - unused for now
+// const StaticNumber = ({ value, decimals = 2, className = "" }) => {
+//   return <span className={className}>{value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}</span>;
+// };
 
 // Helper function to parse created timestamp correctly
 const parseCreatedDate = (entry) => {
@@ -366,7 +364,7 @@ const parseCreatedDate = (entry) => {
   return new Date(); // Last resort
 };
 
-const iconClass = "w-6 h-6 inline-block mr-2 text-blue-400 align-middle";
+// const iconClass = "w-6 h-6 inline-block mr-2 text-blue-400 align-middle"; // Unused for now
 
 // Removed animation variants for minimalistic design
 
@@ -794,17 +792,17 @@ const SummaryPage = () => {
 
 
 
-  const { curve, points } = curveData;
+  const { points } = curveData; // curve unused, only points needed
   // Unused for now - kept for potential future use
   // const minY = Math.min(...curve);
   // const maxY = Math.max(...curve);
   // const height = 320;
   // const width = 700;
 
-  // Prepare weekly and monthly PnL tables
-  const weeklyRows = stats ? Object.entries(stats.byWeek).sort((a, b) => b[0].localeCompare(a[0])) : [];
-  // const monthlyRows = stats ? Object.entries(stats.byMonth).sort((a, b) => b[0].localeCompare(a[0])) : []; // Unused for now
-  const dailyRows = Object.entries(dailyPnl).sort((a, b) => new Date(b[0]) - new Date(a[0]));
+  // Prepare weekly and monthly PnL tables - unused for now
+  // const weeklyRows = stats ? Object.entries(stats.byWeek).sort((a, b) => b[0].localeCompare(a[0])) : [];
+  // const monthlyRows = stats ? Object.entries(stats.byMonth).sort((a, b) => b[0].localeCompare(a[0])) : [];
+  // const dailyRows = Object.entries(dailyPnl).sort((a, b) => new Date(b[0]) - new Date(a[0]));
 
   // Compute current account balance
   let currentBalance = "0.00";
@@ -928,22 +926,20 @@ const SummaryPage = () => {
   // const mostRecentDay = dailyRows.length > 0 ? dailyRows[0] : null;
   // const mostRecentWeek = weeklyRows.length > 0 ? weeklyRows[0] : null;
   // const mostRecentMonth = monthlyRows.length > 0 ? monthlyRows[0] : null;
-  // Helper function to get entry date using year/month/day fields (consistent with other functions)
-  const getEntryDate = (entry) => {
-    if (entry.year && entry.month && entry.day) {
-      // Use the year/month/day fields that are stored as strings
-      const year = parseInt(entry.year, 10);
-      const month = parseInt(entry.month, 10) - 1; // Convert to 0-indexed
-      const day = parseInt(entry.day, 10);
-      return new Date(year, month, day);
-    }
-    // Fallback to created timestamp
-    if (entry.created) {
-      const timestamp = entry.created.split('-')[0]; // Remove random suffix
-      return new Date(timestamp);
-    }
-    return new Date();
-  };
+  // Helper function to get entry date using year/month/day fields (consistent with other functions) - unused for now
+  // const getEntryDate = (entry) => {
+  //   if (entry.year && entry.month && entry.day) {
+  //     const year = parseInt(entry.year, 10);
+  //     const month = parseInt(entry.month, 10) - 1;
+  //     const day = parseInt(entry.day, 10);
+  //     return new Date(year, month, day);
+  //   }
+  //   if (entry.created) {
+  //     const timestamp = entry.created.split('-')[0];
+  //     return new Date(timestamp);
+  //   }
+  //   return new Date();
+  // };
 
   // const sortedTrades = [...tradeEntries].sort((a, b) => getEntryDate(b) - getEntryDate(a)); // Unused for now
   const bestTrade = tradeEntries.length ? tradeEntries.reduce((a, b) => (a.pnl > b.pnl ? a : b)) : null;
