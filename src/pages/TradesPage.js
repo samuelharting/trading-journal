@@ -66,7 +66,7 @@ const TradesPage = () => {
       // Update local state instead of refreshing the page
       setGroupedImages(prev => prev.filter(group => group.entry.id !== entry.id));
       setAllImages(prev => prev.filter(item => item.entry.id !== entry.id));
-      setAllEntries(prev => prev.filter(item => item.id !== entry.id));
+      // setAllEntries removed - state is commented out and not used
       
       // Close any open modals if the deleted entry was being viewed
       if (selectedImage && selectedImage.entry && selectedImage.entry.id === entry.id) {
@@ -340,7 +340,7 @@ const TradesPage = () => {
       
       setGroupedImages(grouped);
       setAllImages(allImagesArray);
-      setAllEntries(allEntries); // Store all entries for navigation
+      // setAllEntries removed - state is commented out and not used
     };
     fetchData();
   }, [currentUser, selectedAccount, dataRefreshTrigger]); // Include selectedAccount since deposits/payouts are account-specific
