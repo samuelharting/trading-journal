@@ -398,41 +398,41 @@ const TradesPage = () => {
     setShowHeader(false);
   };
 
-  const closeImageViewer = () => {
+  const closeImageViewer = useCallback(() => {
     setSelectedImage(null);
     setSelectedImageIndex(0);
     setTradeEntry(null);
     setShowTradeDetails(false);
     setShowHeader(true);
-  };
+  }, []); // No dependencies - only uses setters which are stable
 
-  const navigateImage = (direction) => {
+  const navigateImage = useCallback((direction) => {
     if (direction === 'prev') {
-      const newIndex = selectedImageIndex > 0 ? selectedImageIndex - 1 : allImages.length - 1;
-      setSelectedImageIndex(newIndex);
-      const imageItem = allImages[newIndex];
-      
-      // Set the selected image directly from the navigation array
-      setSelectedImage({
-        src: imageItem.src, // Can be null for placeholders
-        entry: imageItem.entry,
-        imageIndex: imageItem.imageIndex || 0
+      setSelectedImageIndex(prev => {
+        const newIndex = prev > 0 ? prev - 1 : allImages.length - 1;
+        const imageItem = allImages[newIndex];
+        setSelectedImage({
+          src: imageItem.src, // Can be null for placeholders
+          entry: imageItem.entry,
+          imageIndex: imageItem.imageIndex || 0
+        });
+        setTradeEntry(imageItem.entry);
+        return newIndex;
       });
-      setTradeEntry(imageItem.entry);
     } else {
-      const newIndex = selectedImageIndex < allImages.length - 1 ? selectedImageIndex + 1 : 0;
-      setSelectedImageIndex(newIndex);
-      const imageItem = allImages[newIndex];
-      
-      // Set the selected image directly from the navigation array
-      setSelectedImage({
-        src: imageItem.src, // Can be null for placeholders
-        entry: imageItem.entry,
-        imageIndex: imageItem.imageIndex || 0
+      setSelectedImageIndex(prev => {
+        const newIndex = prev < allImages.length - 1 ? prev + 1 : 0;
+        const imageItem = allImages[newIndex];
+        setSelectedImage({
+          src: imageItem.src, // Can be null for placeholders
+          entry: imageItem.entry,
+          imageIndex: imageItem.imageIndex || 0
+        });
+        setTradeEntry(imageItem.entry);
+        return newIndex;
       });
-      setTradeEntry(imageItem.entry);
     }
-  };
+  }, [allImages]); // Only depends on allImages
 
   const goToDay = () => {
     if (tradeEntry) {

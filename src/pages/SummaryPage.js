@@ -370,14 +370,15 @@ const iconClass = "w-6 h-6 inline-block mr-2 text-blue-400 align-middle";
 
 // Removed animation variants for minimalistic design
 
-function formatDurationMins(mins) {
-  if (!mins || isNaN(mins)) return '';
-  const hours = Math.floor(mins / 60);
-  const minutes = Math.round(mins % 60);
-  if (hours > 0 && minutes > 0) return `${hours}hr ${minutes}min`;
-  if (hours > 0) return `${hours}hr`;
-  return `${minutes}min`;
-}
+// Unused for now - kept for potential future use
+// function formatDurationMins(mins) {
+//   if (!mins || isNaN(mins)) return '';
+//   const hours = Math.floor(mins / 60);
+//   const minutes = Math.round(mins % 60);
+//   if (hours > 0 && minutes > 0) return `${hours}hr ${minutes}min`;
+//   if (hours > 0) return `${hours}hr`;
+//   return `${minutes}min`;
+// }
 
 // EquityCurveChart component
 function EquityCurveChart({ points }) {
@@ -435,63 +436,64 @@ function EquityCurveChart({ points }) {
   );
 }
 
-// Add helper to group entries by week for the current month
-function getWeeksOfMonth(year, month) {
-  // Returns an array of [startDay, endDay] for each week in the month
-  const firstDay = new Date(year, month - 1, 1);
-  const lastDay = new Date(year, month, 0);
-  const weeks = [];
-  let current = new Date(firstDay);
-  while (current <= lastDay) {
-    const weekStart = new Date(current);
-    const weekEnd = new Date(current);
-    weekEnd.setDate(weekEnd.getDate() + (6 - weekEnd.getDay() + 1) % 7);
-    if (weekEnd > lastDay) weekEnd.setTime(lastDay.getTime());
-    weeks.push([new Date(weekStart), new Date(weekEnd)]);
-    current.setDate(current.getDate() + 7 - (current.getDay() + 6) % 7);
-  }
-  return weeks;
-}
+// Unused for now - kept for potential future use
+// function getWeeksOfMonth(year, month) {
+//   // Returns an array of [startDay, endDay] for each week in the month
+//   const firstDay = new Date(year, month - 1, 1);
+//   const lastDay = new Date(year, month, 0);
+//   const weeks = [];
+//   let current = new Date(firstDay);
+//   while (current <= lastDay) {
+//     const weekStart = new Date(current);
+//     const weekEnd = new Date(current);
+//     weekEnd.setDate(weekEnd.getDate() + (6 - weekEnd.getDay() + 1) % 7);
+//     if (weekEnd > lastDay) weekEnd.setTime(lastDay.getTime());
+//     weeks.push([new Date(weekStart), new Date(weekEnd)]);
+//     current.setDate(current.getDate() + 7 - (current.getDay() + 6) % 7);
+//   }
+//   return weeks;
+// }
 
-function getWeeklyPnlsForMonth(entries, year, month) {
-  // Only entries in the given month that are actual trades (not deposits, payouts, or tape reading)
-  const filtered = entries.filter(e => 
-    String(e.year) === String(year) && 
-    String(e.month) === String(month) &&
-    !e.isDeposit && 
-    !e.isPayout && 
-    !e.isTapeReading &&
-    e.pnl !== undefined &&
-    e.pnl !== null &&
-    e.pnl !== ""
-  );
-  const daysInMonth = new Date(year, month, 0).getDate();
-  // Build a map day->PnL
-  const dayPnls = {};
-  filtered.forEach(e => {
-    const day = parseInt(e.day, 10);
-    if (!isNaN(day)) {
-      const pnlValue = Number(e.pnl) || 0;
-      dayPnls[day] = Math.round(((dayPnls[day] || 0) + pnlValue) * 100) / 100;
-    }
-  });
-  // Get week ranges
-  const weeks = [];
-  let weekStart = 1;
-  let weekEnd = 7 - (new Date(year, month - 1, 1).getDay() + 6) % 7;
-  if (weekEnd < 1) weekEnd = 7;
-  while (weekStart <= daysInMonth) {
-    if (weekEnd > daysInMonth) weekEnd = daysInMonth;
-    let sum = 0;
-    for (let d = weekStart; d <= weekEnd; d++) {
-      sum += dayPnls[d] || 0;
-    }
-    weeks.push({ weekStart, weekEnd, pnl: sum });
-    weekStart = weekEnd + 1;
-    weekEnd = weekStart + 6;
-  }
-  return weeks;
-}
+// Unused for now - kept for potential future use
+// function getWeeklyPnlsForMonth(entries, year, month) {
+//   // Only entries in the given month that are actual trades (not deposits, payouts, or tape reading)
+//   const filtered = entries.filter(e => 
+//     String(e.year) === String(year) && 
+//     String(e.month) === String(month) &&
+//     !e.isDeposit && 
+//     !e.isPayout && 
+//     !e.isTapeReading &&
+//     e.pnl !== undefined &&
+//     e.pnl !== null &&
+//     e.pnl !== ""
+//   );
+//   const daysInMonth = new Date(year, month, 0).getDate();
+//   // Build a map day->PnL
+//   const dayPnls = {};
+//   filtered.forEach(e => {
+//     const day = parseInt(e.day, 10);
+//     if (!isNaN(day)) {
+//       const pnlValue = Number(e.pnl) || 0;
+//       dayPnls[day] = Math.round(((dayPnls[day] || 0) + pnlValue) * 100) / 100;
+//     }
+//   });
+//   // Get week ranges
+//   const weeks = [];
+//   let weekStart = 1;
+//   let weekEnd = 7 - (new Date(year, month - 1, 1).getDay() + 6) % 7;
+//   if (weekEnd < 1) weekEnd = 7;
+//   while (weekStart <= daysInMonth) {
+//     if (weekEnd > daysInMonth) weekEnd = daysInMonth;
+//     let sum = 0;
+//     for (let d = weekStart; d <= weekEnd; d++) {
+//       sum += dayPnls[d] || 0;
+//     }
+//     weeks.push({ weekStart, weekEnd, pnl: sum });
+//     weekStart = weekEnd + 1;
+//     weekEnd = weekStart + 6;
+//   }
+//   return weeks;
+// }
 
 function getPercentageChanges(entries, currentBalance, selectedYear = 'all') {
   if (!entries.length) return null;
@@ -793,14 +795,15 @@ const SummaryPage = () => {
 
 
   const { curve, points } = curveData;
-  const minY = Math.min(...curve);
-  const maxY = Math.max(...curve);
-  const height = 320;
-  const width = 700;
+  // Unused for now - kept for potential future use
+  // const minY = Math.min(...curve);
+  // const maxY = Math.max(...curve);
+  // const height = 320;
+  // const width = 700;
 
   // Prepare weekly and monthly PnL tables
   const weeklyRows = stats ? Object.entries(stats.byWeek).sort((a, b) => b[0].localeCompare(a[0])) : [];
-  const monthlyRows = stats ? Object.entries(stats.byMonth).sort((a, b) => b[0].localeCompare(a[0])) : [];
+  // const monthlyRows = stats ? Object.entries(stats.byMonth).sort((a, b) => b[0].localeCompare(a[0])) : []; // Unused for now
   const dailyRows = Object.entries(dailyPnl).sort((a, b) => new Date(b[0]) - new Date(a[0]));
 
   // Compute current account balance
@@ -814,22 +817,22 @@ const SummaryPage = () => {
       balanceEntries = entries.filter(e => String(e.year) === String(selectedYear));
       console.log('💰 SummaryPage: Filtered to', balanceEntries.length, 'entries for year', selectedYear);
     }
-    // Helper function to get entry date using year/month/day fields (consistent with other functions)
-    const getEntryDate = (entry) => {
-      if (entry.year && entry.month && entry.day) {
-        // Use the year/month/day fields that are stored as strings
-        const year = parseInt(entry.year, 10);
-        const month = parseInt(entry.month, 10) - 1; // Convert to 0-indexed
-        const day = parseInt(entry.day, 10);
-        return new Date(year, month, day);
-      }
-      // Fallback to created timestamp
-      if (entry.created) {
-        const timestamp = entry.created.split('-')[0]; // Remove random suffix
-        return new Date(timestamp);
-      }
-      return new Date();
-    };
+    // Helper function to get entry date using year/month/day fields (consistent with other functions) - unused for now
+    // const getEntryDate = (entry) => {
+    //   if (entry.year && entry.month && entry.day) {
+    //     // Use the year/month/day fields that are stored as strings
+    //     const year = parseInt(entry.year, 10);
+    //     const month = parseInt(entry.month, 10) - 1; // Convert to 0-indexed
+    //     const day = parseInt(entry.day, 10);
+    //     return new Date(year, month, day);
+    //   }
+    //   // Fallback to created timestamp
+    //   if (entry.created) {
+    //     const timestamp = entry.created.split('-')[0]; // Remove random suffix
+    //     return new Date(timestamp);
+    //   }
+    //   return new Date();
+    // };
 
     // Sort entries chronologically - using created timestamp as primary sort
     const sorted = [...balanceEntries].sort((a, b) => {
@@ -921,10 +924,10 @@ const SummaryPage = () => {
   console.log('🎯 Trade Entries Count:', tradeEntries.length);
   console.log('==========================================');
 
-  // Find the most recent day, week, and month
-  const mostRecentDay = dailyRows.length > 0 ? dailyRows[0] : null;
-  const mostRecentWeek = weeklyRows.length > 0 ? weeklyRows[0] : null;
-  // const mostRecentMonth = monthlyRows.length > 0 ? monthlyRows[0] : null; // Unused for now
+  // Find the most recent day, week, and month - unused for now
+  // const mostRecentDay = dailyRows.length > 0 ? dailyRows[0] : null;
+  // const mostRecentWeek = weeklyRows.length > 0 ? weeklyRows[0] : null;
+  // const mostRecentMonth = monthlyRows.length > 0 ? monthlyRows[0] : null;
   // Helper function to get entry date using year/month/day fields (consistent with other functions)
   const getEntryDate = (entry) => {
     if (entry.year && entry.month && entry.day) {
@@ -942,7 +945,7 @@ const SummaryPage = () => {
     return new Date();
   };
 
-  const sortedTrades = [...tradeEntries].sort((a, b) => getEntryDate(b) - getEntryDate(a));
+  // const sortedTrades = [...tradeEntries].sort((a, b) => getEntryDate(b) - getEntryDate(a)); // Unused for now
   const bestTrade = tradeEntries.length ? tradeEntries.reduce((a, b) => (a.pnl > b.pnl ? a : b)) : null;
   const worstTrade = tradeEntries.length ? tradeEntries.reduce((a, b) => (a.pnl < b.pnl ? a : b)) : null;
   // const recentTrades = sortedTrades.slice(0, 5); // Unused for now
@@ -1005,8 +1008,8 @@ const SummaryPage = () => {
   // }));
   // const weeklyTrend = stats && stats.byWeek ? Object.entries(stats.byWeek).map(([week, value]) => ({ week, value })) : [];
 
-  // Get current month
-  const currentMonth = new Date().getMonth() + 1;
+  // Get current month - unused for now
+  // const currentMonth = new Date().getMonth() + 1;
   // Get weekly PnLs for current month - respect year filter - unused for now
   // let weeklyPnls = [];
   // if (selectedYear === 'all' || String(currentYear) === String(selectedYear)) {
