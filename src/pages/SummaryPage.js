@@ -924,7 +924,7 @@ const SummaryPage = () => {
   // Find the most recent day, week, and month
   const mostRecentDay = dailyRows.length > 0 ? dailyRows[0] : null;
   const mostRecentWeek = weeklyRows.length > 0 ? weeklyRows[0] : null;
-  const mostRecentMonth = monthlyRows.length > 0 ? monthlyRows[0] : null;
+  // const mostRecentMonth = monthlyRows.length > 0 ? monthlyRows[0] : null; // Unused for now
   // Helper function to get entry date using year/month/day fields (consistent with other functions)
   const getEntryDate = (entry) => {
     if (entry.year && entry.month && entry.day) {
@@ -945,11 +945,11 @@ const SummaryPage = () => {
   const sortedTrades = [...tradeEntries].sort((a, b) => getEntryDate(b) - getEntryDate(a));
   const bestTrade = tradeEntries.length ? tradeEntries.reduce((a, b) => (a.pnl > b.pnl ? a : b)) : null;
   const worstTrade = tradeEntries.length ? tradeEntries.reduce((a, b) => (a.pnl < b.pnl ? a : b)) : null;
-  const recentTrades = sortedTrades.slice(0, 5);
-  // Average holding time (duration)
-  const avgDurationMins = tradeEntries.length ? tradeEntries.reduce((sum, e) => sum + (parseFloat(e.duration) || 0), 0) / tradeEntries.length : 0;
-  // Best day of week
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  // const recentTrades = sortedTrades.slice(0, 5); // Unused for now
+  // Average holding time (duration) - unused for now
+  // const avgDurationMins = tradeEntries.length ? tradeEntries.reduce((sum, e) => sum + (parseFloat(e.duration) || 0), 0) / tradeEntries.length : 0;
+  // Best day of week - unused for now
+  // const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const pnlByDay = {};
   const countByDay = {};
   tradeEntries.forEach(e => {
@@ -968,10 +968,10 @@ const SummaryPage = () => {
     pnlByDay[dayOfWeek] = (pnlByDay[dayOfWeek] || 0) + (Number(e.pnl) || 0);
     countByDay[dayOfWeek] = (countByDay[dayOfWeek] || 0) + 1;
   });
-  const avgByDay = Object.keys(pnlByDay).map(day => ({
-    day: Number(day),
-    avg: countByDay[day] ? pnlByDay[day] / countByDay[day] : 0
-  }));
+  // const avgByDay = Object.keys(pnlByDay).map(day => ({
+  //   day: Number(day),
+  //   avg: countByDay[day] ? pnlByDay[day] / countByDay[day] : 0
+  // })); // Unused for now
   // const bestDay = avgByDay.length ? avgByDay.reduce((a, b) => (a.avg > b.avg ? a : b)) : null; // Unused for now
   // Best month
   const pnlByMonth = {};
@@ -992,12 +992,12 @@ const SummaryPage = () => {
     pnlByMonth[monthOfYear] = (pnlByMonth[monthOfYear] || 0) + (Number(e.pnl) || 0);
     countByMonth[monthOfYear] = (countByMonth[monthOfYear] || 0) + 1;
   });
-  const avgByMonth = Object.keys(pnlByMonth).map(month => ({
-    month: Number(month),
-    avg: countByMonth[month] ? pnlByMonth[month] / countByMonth[month] : 0
-  }));
+  // const avgByMonth = Object.keys(pnlByMonth).map(month => ({
+  //   month: Number(month),
+  //   avg: countByMonth[month] ? pnlByMonth[month] / countByMonth[month] : 0
+  // })); // Unused for now
   // const bestMonth = avgByMonth.length ? avgByMonth.reduce((a, b) => (a.avg > b.avg ? a : b)) : null; // Unused for now
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]; // Unused for now
   // Monthly/Weekly P&L trend data - unused for now
   // const monthlyTrend = monthNames.map((name, idx) => ({
   //   name,
@@ -1007,17 +1007,17 @@ const SummaryPage = () => {
 
   // Get current month
   const currentMonth = new Date().getMonth() + 1;
-  // Get weekly PnLs for current month - respect year filter
-  let weeklyPnls = [];
-  if (selectedYear === 'all' || String(currentYear) === String(selectedYear)) {
-    weeklyPnls = getWeeklyPnlsForMonth(entries, currentYear, currentMonth);
-  }
+  // Get weekly PnLs for current month - respect year filter - unused for now
+  // let weeklyPnls = [];
+  // if (selectedYear === 'all' || String(currentYear) === String(selectedYear)) {
+  //   weeklyPnls = getWeeklyPnlsForMonth(entries, currentYear, currentMonth);
+  // }
   // Get monthly PnL for current month - unused for now
   // const monthlyPnl = Math.round(weeklyPnls.reduce((sum, w) => sum + w.pnl, 0) * 100) / 100;
 
-  // Find the most recent week and month
-  const mostRecentWeekKey = weeklyRows.length > 0 ? weeklyRows[0][0] : null;
-  const mostRecentMonthKey = monthlyRows.length > 0 ? monthlyRows[0][0] : null;
+  // Find the most recent week and month - unused for now
+  // const mostRecentWeekKey = weeklyRows.length > 0 ? weeklyRows[0][0] : null;
+  // const mostRecentMonthKey = monthlyRows.length > 0 ? monthlyRows[0][0] : null;
   // const mostRecentWeekPnl = mostRecentWeekKey ? stats.byWeek[mostRecentWeekKey] : 0; // Unused for now
   // const mostRecentMonthPnl = mostRecentMonthKey ? stats.byMonth[mostRecentMonthKey] : 0; // Unused for now
 

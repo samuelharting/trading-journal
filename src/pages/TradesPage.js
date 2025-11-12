@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useState, useContext, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Tilt from "react-parallax-tilt";
-import { StarIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, XMarkIcon, InformationCircleIcon } from '@heroicons/react/24/solid';
+import { StarIcon, ChevronLeftIcon, ChevronRightIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { UserContext } from "../App";
 import { useHeader } from "../components/Layout";
 import { db } from '../firebase';
@@ -10,11 +10,11 @@ import { collection, getDocs, doc, getDoc, setDoc, deleteDoc } from 'firebase/fi
 import Spinner from '../components/MatrixLoader';
 
 const TradesPage = () => {
-  const { user, currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
+  const { currentUser, selectedAccount, dataRefreshTrigger } = useContext(UserContext);
   const { setShowHeader } = useHeader();
   const [groupedImages, setGroupedImages] = useState([]);
   const [allImages, setAllImages] = useState([]);
-  const [allEntries, setAllEntries] = useState([]); // For navigation through all entries
+  // const [allEntries, setAllEntries] = useState([]); // For navigation through all entries - unused for now
   const [favorites, setFavorites] = useState({});
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -440,7 +440,7 @@ const TradesPage = () => {
     }
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = useCallback((e) => {
     if (!selectedImage) return;
     if (e.key === 'Escape') {
       closeImageViewer();
@@ -449,12 +449,12 @@ const TradesPage = () => {
     } else if (e.key === 'ArrowRight') {
       navigateImage('next');
     }
-  };
+  }, [selectedImage, closeImageViewer, navigateImage]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedImage, selectedImageIndex]);
+  }, [handleKeyDown]);
   
   // Filter entries based on selected month and year
   useEffect(() => {
