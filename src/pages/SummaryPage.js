@@ -972,7 +972,7 @@ const SummaryPage = () => {
     day: Number(day),
     avg: countByDay[day] ? pnlByDay[day] / countByDay[day] : 0
   }));
-  const bestDay = avgByDay.length ? avgByDay.reduce((a, b) => (a.avg > b.avg ? a : b)) : null;
+  // const bestDay = avgByDay.length ? avgByDay.reduce((a, b) => (a.avg > b.avg ? a : b)) : null; // Unused for now
   // Best month
   const pnlByMonth = {};
   const countByMonth = {};
@@ -996,14 +996,14 @@ const SummaryPage = () => {
     month: Number(month),
     avg: countByMonth[month] ? pnlByMonth[month] / countByMonth[month] : 0
   }));
-  const bestMonth = avgByMonth.length ? avgByMonth.reduce((a, b) => (a.avg > b.avg ? a : b)) : null;
+  // const bestMonth = avgByMonth.length ? avgByMonth.reduce((a, b) => (a.avg > b.avg ? a : b)) : null; // Unused for now
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  // Monthly/Weekly P&L trend data
-  const monthlyTrend = monthNames.map((name, idx) => ({
-    name,
-    value: stats && stats.byMonth ? stats.byMonth[`${new Date().getFullYear()}-${idx + 1}`] || 0 : 0
-  }));
-  const weeklyTrend = stats && stats.byWeek ? Object.entries(stats.byWeek).map(([week, value]) => ({ week, value })) : [];
+  // Monthly/Weekly P&L trend data - unused for now
+  // const monthlyTrend = monthNames.map((name, idx) => ({
+  //   name,
+  //   value: stats && stats.byMonth ? stats.byMonth[`${new Date().getFullYear()}-${idx + 1}`] || 0 : 0
+  // }));
+  // const weeklyTrend = stats && stats.byWeek ? Object.entries(stats.byWeek).map(([week, value]) => ({ week, value })) : [];
 
   // Get current month
   const currentMonth = new Date().getMonth() + 1;
@@ -1012,14 +1012,14 @@ const SummaryPage = () => {
   if (selectedYear === 'all' || String(currentYear) === String(selectedYear)) {
     weeklyPnls = getWeeklyPnlsForMonth(entries, currentYear, currentMonth);
   }
-  // Get monthly PnL for current month
-  const monthlyPnl = Math.round(weeklyPnls.reduce((sum, w) => sum + w.pnl, 0) * 100) / 100;
+  // Get monthly PnL for current month - unused for now
+  // const monthlyPnl = Math.round(weeklyPnls.reduce((sum, w) => sum + w.pnl, 0) * 100) / 100;
 
   // Find the most recent week and month
   const mostRecentWeekKey = weeklyRows.length > 0 ? weeklyRows[0][0] : null;
   const mostRecentMonthKey = monthlyRows.length > 0 ? monthlyRows[0][0] : null;
-  const mostRecentWeekPnl = mostRecentWeekKey ? stats.byWeek[mostRecentWeekKey] : 0;
-  const mostRecentMonthPnl = mostRecentMonthKey ? stats.byMonth[mostRecentMonthKey] : 0;
+  // const mostRecentWeekPnl = mostRecentWeekKey ? stats.byWeek[mostRecentWeekKey] : 0; // Unused for now
+  // const mostRecentMonthPnl = mostRecentMonthKey ? stats.byMonth[mostRecentMonthKey] : 0; // Unused for now
 
   const handleReset = async () => {
     if (!window.confirm('Are you sure you want to reset this account? This will:\n• Delete deposits and payouts\n• Mark trades as "reset" (excluded from this account\'s P&L)\n• Trades will still be visible on Trades page (cross-account)\n• Account balance and percentages will be reset to 0')) return;

@@ -94,16 +94,16 @@ export function getTradingPerformance(entries, targetYear = null, targetMonth = 
     return aTime - bTime;
   });
   
-  // Helper to get entry date
-  const getEntryDate = (entry) => {
-    if (entry.year && entry.month && entry.day) {
-      return new Date(parseInt(entry.year), parseInt(entry.month) - 1, parseInt(entry.day));
-    }
-    if (entry.created) {
-      return new Date(entry.created.split('-')[0]);
-    }
-    return new Date();
-  };
+  // Helper to get entry date - unused for now
+  // const getEntryDate = (entry) => {
+  //   if (entry.year && entry.month && entry.day) {
+  //     return new Date(parseInt(entry.year), parseInt(entry.month) - 1, parseInt(entry.day));
+  //   }
+  //   if (entry.created) {
+  //     return new Date(entry.created.split('-')[0]);
+  //   }
+  //   return new Date();
+  // };
   
   // Calculate the starting capital (sum of all deposits minus payouts)
   const totalDeposits = sumPrecise(
